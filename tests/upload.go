@@ -12,6 +12,7 @@ import (
     "net/http"
     "net/textproto"
     "os"
+    "strings"
 )
 
 type UploadRequest interface {
@@ -108,6 +109,55 @@ func (ur *UploadMultipartRequest) GetHTTPRequest(url string) (*http.Request, err
     }
 
     req.Header.Set("Content-Type", w.FormDataContentType())
+    return req, nil
+}
+
+/* --- mulipart --- */
+
+type UploadSimpleRequest struct {
+    content            string
+    contentDisposition string
+    validator          []*UploadValidator
+}
+
+func (us *UploadSimpleRequest) ContentDisposition(contentDisposition string) *UploadSimpleRequest {
+    us.contentDisposition = contentDisposition
+    return us
+}
+
+func (us *UploadSimpleRequest) Content(content string) *UploadSimpleRequest {
+    us.content = content
+    return us
+}
+
+func (us *UploadSimpleRequest) Validator(fn UploadValidatorFn) *UploadSimpleRequest {
+    us.validator = append(us.validator, &UploadValidator{
+        fn: fn,
+    })
+
+    return us
+}
+
+func (us *UploadSimpleRequest) Validate(result *UploadResult) error {
+    for _, validator := range us.validator {
+        if err := validator.fn(result); err != nil {
+            return err
+        }
+    }
+
+    return nil
+}
+
+func (us *UploadSimpleRequest) GetHTTPRequest(url string) (*http.Request, error) {
+    req, err := http.NewRequest("POST", url, strings.NewReader(us.content))
+    if err != nil {
+        return nil, err
+    }
+
+    if len(us.contentDisposition) > 0 {
+        req.Header.Set("Content-Disposition", us.contentDisposition)
+    }
+
     return req, nil
 }
 

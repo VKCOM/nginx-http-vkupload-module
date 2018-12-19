@@ -202,16 +202,30 @@ ngx_http_vkupload_buf_append_kvalue(ngx_chain_t **bufs_ptr, ngx_pool_t *pool, co
 ngx_str_t *
 ngx_http_vkupload_header_find(ngx_http_request_t *request, const ngx_str_t *name)
 {
-    ngx_http_core_main_conf_t  *http_mconf = ngx_http_get_module_main_conf(request, ngx_http_core_module);
-    ngx_uint_t                  name_hash;
-    ngx_http_header_t          *header;
+    ngx_list_part_t  *part;
+    ngx_table_elt_t  *h;
+    ngx_uint_t        i;
 
-    name_hash = ngx_hash_key_lc(name->data, name->len);
-    header = ngx_hash_find(&http_mconf->headers_in_hash, name_hash, name->data, name->len);
+    part = &request->headers_in.headers.part;
+    h = part->elts;
 
-    if (header == NULL || header->offset == 0) {
-        return NULL;
+    for (i = 0; /* void */ ; i++) {
+        if (i >= part->nelts) {
+            if (part->next == NULL) {
+                break;
+            }
+
+            part = part->next;
+            h = part->elts;
+            i = 0;
+        }
+
+        if (name->len != h[i].key.len || ngx_strcasecmp(name->data, h[i].key.data) != 0) {
+            continue;
+        }
+
+        return &(h[i].value);
     }
 
-    return &((*((ngx_table_elt_t **) ((char *) &request->headers_in + header->offset)))->value);
+    return NULL;
 }
