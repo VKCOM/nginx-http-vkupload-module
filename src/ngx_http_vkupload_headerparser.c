@@ -120,6 +120,8 @@ ngx_http_vkupload_headerparser_content_disposition(ngx_http_vkupload_content_dis
     *filename = (ngx_str_t) ngx_null_string;
     *name = (ngx_str_t) ngx_null_string;
 
+    *type = ngx_http_vkupload_content_disposition_st_unknown;
+
     if (str_starts_with(disposition_start, disposition_end, "form-data")) {
         *type = ngx_http_vkupload_content_disposition_st_attachment;
     } else if (str_starts_with(disposition_start, disposition_end, "attachment")) {
