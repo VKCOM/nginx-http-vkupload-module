@@ -4,12 +4,16 @@
 
 #include "ngx_http_vkupload_module.h"
 #include "ngx_http_vkupload_request.h"
+#include "ngx_http_vkupload_resumable.h"
+#include "ngx_shared_file.h"
 
 static void *ngx_http_vkupload_create_loc_conf(ngx_conf_t *cf);
 static char *ngx_http_vkupload_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child);
 
 static char *ngx_http_vkupload_pass_set_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static char *ngx_conf_set_vkupload_field_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
+static char *ngx_http_vkupload_resumable_shared_zone_set_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
+static ngx_int_t  ngx_http_vkupload_resumable_init_zone(ngx_shm_zone_t *shzone, void *data);
 
 static ngx_path_init_t ngx_http_vkupload_temp_path = {
     ngx_string(NGX_HTTP_CLIENT_TEMP_PATH), { 0, 0, 0 }
@@ -64,6 +68,32 @@ static ngx_command_t ngx_http_vkupload_commands[] = {
         ngx_conf_set_str_array_slot,
         NGX_HTTP_LOC_CONF_OFFSET,
         offsetof(ngx_http_vkupload_loc_conf_t, multipart_fields),
+        NULL
+    },
+
+
+    { ngx_string("vkupload_resumable"),
+        NGX_HTTP_LOC_CONF
+            |NGX_CONF_TAKE1,
+        ngx_conf_set_flag_slot,
+        NGX_HTTP_LOC_CONF_OFFSET,
+        offsetof(ngx_http_vkupload_loc_conf_t, resumable),
+        NULL
+    },
+    { ngx_string("vkupload_resumable_session_name"),
+        NGX_HTTP_LOC_CONF
+            |NGX_CONF_TAKE1,
+        ngx_http_set_complex_value_slot,
+        NGX_HTTP_LOC_CONF_OFFSET,
+        offsetof(ngx_http_vkupload_loc_conf_t, resumable_session_name),
+        NULL
+    },
+    { ngx_string("vkupload_resumable_session_zone"),
+        NGX_HTTP_LOC_CONF
+            |NGX_CONF_TAKE12,
+        ngx_http_vkupload_resumable_shared_zone_set_slot,
+        NGX_HTTP_LOC_CONF_OFFSET,
+        offsetof(ngx_http_vkupload_loc_conf_t, resumable_session_shmem),
         NULL
     },
 
@@ -122,6 +152,10 @@ ngx_http_vkupload_create_loc_conf(ngx_conf_t *cf)
     conf->multipart = NGX_CONF_UNSET;
     conf->multipart_fields = NGX_CONF_UNSET_PTR;
 
+    conf->resumable = NGX_CONF_UNSET;
+    conf->resumable_session_name = NGX_CONF_UNSET_PTR;
+    conf->resumable_session_shmem = NGX_CONF_UNSET_PTR;
+
     return conf;
 }
 
@@ -130,6 +164,7 @@ ngx_http_vkupload_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 {
     ngx_http_vkupload_loc_conf_t  *prev = parent;
     ngx_http_vkupload_loc_conf_t  *conf = child;
+    ngx_shared_file_manager_t     *manager;
 
     ngx_conf_merge_str_value(conf->upload_url, prev->upload_url, "");
     ngx_conf_merge_ptr_value(conf->upload_fields, prev->upload_fields, NULL);
@@ -144,6 +179,19 @@ ngx_http_vkupload_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 
     ngx_conf_merge_value(conf->multipart, prev->multipart, 0);
     ngx_conf_merge_ptr_value(conf->multipart_fields, prev->multipart_fields, NULL);
+
+    ngx_conf_merge_value(conf->resumable, prev->resumable, 0);
+    ngx_conf_merge_ptr_value(conf->resumable_session_name, prev->resumable_session_name, NULL);
+    ngx_conf_merge_ptr_value(conf->resumable_session_shmem, prev->resumable_session_shmem, NULL);
+
+    if (conf->resumable_session_shmem) {
+        manager = conf->resumable_session_shmem->data;
+
+        if (manager->file_path == NULL) {
+            manager->file_path = conf->upload_file_path;
+            manager->file_access = conf->upload_file_access;
+        }
+    }
 
     return NGX_CONF_OK;
 }
@@ -248,4 +296,77 @@ ngx_conf_set_vkupload_field_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     }
 
     return NGX_CONF_OK;
+}
+
+char *
+ngx_http_vkupload_resumable_shared_zone_set_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
+{
+    ngx_shared_file_manager_t             *manager;
+    ngx_shm_zone_t                       **slot;
+    ngx_shm_zone_t                        *shzone;
+    ngx_str_t                             *value;
+    ssize_t                                size;
+    char                                  *p = conf;
+
+    slot = (ngx_shm_zone_t **) (p + cmd->offset);
+
+    if (*slot != NGX_CONF_UNSET_PTR) {
+        return "is duplicate";
+    }
+
+    value = cf->args->elts;
+
+    if (!value[1].len) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                           "invalid zone name \"%V\"", &value[1]);
+        return NGX_CONF_ERROR;
+    }
+
+    if (cf->args->nelts == 3) {
+        size = ngx_parse_size(&value[2]);
+
+        if (size == NGX_ERROR) {
+            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                "invalid zone size \"%V\"", &value[2]);
+            return NGX_CONF_ERROR;
+        }
+
+        if (size < (ssize_t) (8 * ngx_pagesize)) {
+            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                "zone \"%V\" is too small", &value[1]);
+            return NGX_CONF_ERROR;
+        }
+    } else {
+        size = 0;
+    }
+
+    manager = ngx_pcalloc(cf->pool, sizeof(ngx_shared_file_manager_t));
+    if (manager == NULL) {
+        return NGX_CONF_ERROR;
+    }
+
+    shzone = ngx_shared_memory_add(cf, &value[1], size, &ngx_http_vkupload_module);
+    if (shzone == NULL) {
+        return NGX_CONF_ERROR;
+    }
+
+    shzone->init = ngx_http_vkupload_resumable_init_zone;
+    shzone->data = manager;
+
+    *slot = shzone;
+
+    return NGX_CONF_OK;
+}
+
+static ngx_int_t
+ngx_http_vkupload_resumable_init_zone(ngx_shm_zone_t *shzone, void *data)
+{
+    ngx_shared_file_manager_t  *manager_old = data;
+    ngx_shared_file_manager_t  *manager = shzone->data;
+
+    if (manager_old) {
+        return ngx_shared_file_manager_copy(manager, manager_old);
+    }
+
+    return ngx_shared_file_manager_init(manager, shzone);
 }

@@ -115,7 +115,14 @@ ngx_http_vkupload_request_simple_start(ngx_http_request_t *request)
         return NGX_NONE;
     }
 
-     simple_upload = ngx_http_get_module_ctx(request, ngx_http_vkupload_module);
+    if (request->headers_in.content_range != NULL) {
+        ngx_log_error(NGX_LOG_WARN, request->connection->log, 0,
+            "ngx_http_vkupload_request_simple_start: not allow partial reuqest without Session-ID header");
+
+        return NGX_HTTP_BAD_REQUEST;
+    }
+
+    simple_upload = ngx_http_get_module_ctx(request, ngx_http_vkupload_module);
     if (simple_upload != NULL) {
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }

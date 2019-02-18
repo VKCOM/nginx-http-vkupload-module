@@ -7,7 +7,9 @@ ngx_module_srcs="
     $ngx_addon_dir/src/ngx_http_vkupload_utils.c
     $ngx_addon_dir/src/ngx_http_vkupload_multipart.c
     $ngx_addon_dir/src/ngx_http_vkupload_multipartparser.c
-    $ngx_addon_dir/src/ngx_http_vkupload_simple.c"
+    $ngx_addon_dir/src/ngx_http_vkupload_simple.c
+    $ngx_addon_dir/src/ngx_http_vkupload_resumable.c
+    $ngx_addon_dir/src/ngx_shared_file.c"
 
 ngx_module_incs="$ngx_addon_dir/src/"
 

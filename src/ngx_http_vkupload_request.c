@@ -9,6 +9,7 @@
 
 #include "ngx_http_vkupload_multipart.h"
 #include "ngx_http_vkupload_simple.h"
+#include "ngx_http_vkupload_resumable.h"
 
 const ngx_str_t  content_disposition_header_name = ngx_string("Content-Disposition");
 const ngx_str_t  content_range_header_name = ngx_string("Content-Range");
@@ -340,9 +341,12 @@ ngx_http_vkupload_request_handler(ngx_http_request_t *request)
         return NGX_HTTP_NOT_ALLOWED;
     }
 
-    rc = ngx_http_vkupload_request_multipart_start(request);
-    if (rc == NGX_NONE) {
-        rc = ngx_http_vkupload_request_simple_start(request);
+    rc = ngx_http_vkupload_request_resumable_start(request);
+        if (rc == NGX_NONE) {
+        rc = ngx_http_vkupload_request_multipart_start(request);
+        if (rc == NGX_NONE) {
+            rc = ngx_http_vkupload_request_simple_start(request);
+        }
     }
 
     if (rc != NGX_OK) {

@@ -18,6 +18,10 @@ typedef struct {
 
     ngx_flag_t    multipart;
     ngx_array_t  *multipart_fields;
+
+    ngx_flag_t                 resumable;
+    ngx_http_complex_value_t  *resumable_session_name;
+    ngx_shm_zone_t            *resumable_session_shmem;
 } ngx_http_vkupload_loc_conf_t;
 
 typedef struct {
