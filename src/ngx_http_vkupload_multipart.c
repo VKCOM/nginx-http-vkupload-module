@@ -231,6 +231,12 @@ ngx_http_vkupload_request_multipart_start(ngx_http_request_t *request)
         return NGX_HTTP_NOT_ALLOWED;
     }
 
+    if (vkupload_lconf->multipart_fields == NULL) {
+        ngx_log_error(NGX_LOG_WARN, request->connection->log, 0,
+            "ngx_http_vkupload_request_handler: multipart fields not configured");
+        return NGX_HTTP_NOT_ALLOWED;
+    }
+
     multipart_upload = ngx_http_get_module_ctx(request, ngx_http_vkupload_module);
     if (multipart_upload != NULL) {
         return NGX_HTTP_INTERNAL_SERVER_ERROR;

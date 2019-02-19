@@ -122,7 +122,7 @@ ngx_http_vkupload_request_resumable_start(ngx_http_request_t *request)
     ngx_http_vkupload_loc_conf_t            *vkupload_lconf = ngx_http_get_module_loc_conf(request, ngx_http_vkupload_module);
     ngx_http_vkupload_resumable_t           *resumable_upload;
     ngx_shared_file_session_t               *session;
-    ngx_shared_file_manager_t               *manager = vkupload_lconf->resumable_session_shmem->data;
+    ngx_shared_file_manager_t               *manager;
     
     ngx_str_t                               *session_id_header, *content_disposition_header;
     ngx_str_t                                session_id, filename, fieldname;
@@ -197,6 +197,18 @@ ngx_http_vkupload_request_resumable_start(ngx_http_request_t *request)
         range.total = request->headers_in.content_length_n;
     }
 
+    if (!vkupload_lconf->resumable) {
+        ngx_log_error(NGX_LOG_WARN, request->connection->log, 0,
+            "ngx_http_vkupload_request_resumable_start: resumable requests not enabled");
+        return NGX_HTTP_NOT_ALLOWED;
+    }
+
+    if (vkupload_lconf->resumable_session_shmem == NULL) {
+        ngx_log_error(NGX_LOG_WARN, request->connection->log, 0,
+            "ngx_http_vkupload_request_resumable_start: resumable shared zone not configured");
+        return NGX_HTTP_NOT_ALLOWED;
+    }
+
     resumable_upload = ngx_http_get_module_ctx(request, ngx_http_vkupload_module);
     if (resumable_upload != NULL) {
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
@@ -222,6 +234,8 @@ ngx_http_vkupload_request_resumable_start(ngx_http_request_t *request)
     if (session == NULL) {
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
+
+    manager = vkupload_lconf->resumable_session_shmem->data;
 
     session->pool = request->pool;
     session->log = request->connection->log;
