@@ -62,6 +62,7 @@ Fields name with file content in multipart request.
 **Context:** `location`
 
 Enables resumable uploads.
+Protocol spec: http://www.grid.net.ru/nginx/resumable_uploads.en.html
 
 ### vkupload_resumable_session_zone
 
