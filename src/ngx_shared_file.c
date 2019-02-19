@@ -271,12 +271,19 @@ ngx_shared_file_open(ngx_shared_file_session_t *session, ngx_str_t *session_id, 
     ngx_shmtx_unlock(&manager->shpool->mutex);
 
     if (shfile == NULL) {
+        ngx_log_error(NGX_LOG_WARN, session->log, 0,
+            "ngx_shared_file_open: error allocate new shared file session for %V", session_id);
+
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
 
     ngx_shared_file_lock(shfile);
 
     if (shfile->completed || shfile->removed) {
+        ngx_log_error(NGX_LOG_INFO, session->log, 0,
+            "ngx_shared_file_open: try open completed or removed session %V (c:%d; r:%d)",
+            session_id, shfile->completed, shfile->removed);
+
         ngx_shared_file_unlock(shfile);
         return NGX_HTTP_BAD_REQUEST;
     }
@@ -288,12 +295,18 @@ ngx_shared_file_open(ngx_shared_file_session_t *session, ngx_str_t *session_id, 
         rc = ngx_create_temp_file(session->file, manager->file_path, session->pool,
             1 /* TODO: comment */, 0 /* TODO: comment */, manager->file_access);
         if (rc != NGX_OK) {
+            ngx_log_error(NGX_LOG_WARN, session->log, ngx_errno,
+                "ngx_shared_file_open: error create tmp file for session %V", session_id);
+
             ngx_shared_file_unlock(shfile);
             return NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
 
         shfile->path.data = ngx_slab_calloc(manager->shpool, session->file->name.len + 1);
         if (shfile->path.data == NULL) {
+            ngx_log_error(NGX_LOG_WARN, session->log, 0,
+                "ngx_shared_file_open: error allocate path data for session %V", session_id);
+
             ngx_shared_file_unlock(shfile);
             return NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
@@ -310,11 +323,19 @@ ngx_shared_file_open(ngx_shared_file_session_t *session, ngx_str_t *session_id, 
         }
     } else {
         if (shfile->total_known && total_size && shfile->total_size != total_size) {
+            ngx_log_error(NGX_LOG_WARN, session->log, 0,
+                "ngx_shared_file_open: invalid total size in request for session %V (%zu != %zu)", session_id,
+                total_size, shfile->total_size);
+
             ngx_shared_file_unlock(shfile);
             return NGX_HTTP_BAD_REQUEST;
         }
 
         if (shfile->total_known && total_size == 0 && end >= shfile->total_size) {
+            ngx_log_error(NGX_LOG_WARN, session->log, 0,
+                "ngx_shared_file_open: invalid range in request for session %V (%zu >= %zu)", session_id,
+                end, shfile->total_size);
+
             ngx_shared_file_unlock(shfile);
             return NGX_HTTP_BAD_REQUEST;
         }
@@ -325,6 +346,10 @@ ngx_shared_file_open(ngx_shared_file_session_t *session, ngx_str_t *session_id, 
             }
 
             if (shfile->total_size > total_size) {
+                ngx_log_error(NGX_LOG_WARN, session->log, 0,
+                    "ngx_shared_file_open: invalid total in request for session %V (%zu >= max:%zu)", session_id,
+                    total_size, shfile->total_size);
+
                 ngx_shared_file_unlock(shfile);
                 return NGX_HTTP_BAD_REQUEST;
             }
@@ -344,6 +369,9 @@ ngx_shared_file_open(ngx_shared_file_session_t *session, ngx_str_t *session_id, 
         session->file->fd = ngx_open_file(session->file->name.data, NGX_FILE_RDWR, NGX_FILE_OPEN, 0);
 
         if (session->file->fd == NGX_INVALID_FILE) {
+            ngx_log_error(NGX_LOG_WARN, session->log, 0,
+                "ngx_shared_file_open: error open file for session %V (%V)", session_id, &session->file->name);
+
             ngx_shared_file_unlock(shfile);
             return NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
@@ -360,6 +388,9 @@ ngx_shared_file_open(ngx_shared_file_session_t *session, ngx_str_t *session_id, 
 
     shpart = ngx_slab_calloc(manager->shpool, sizeof(ngx_shared_file_part_sh_t));
     if (shpart == NULL) {
+        ngx_log_error(NGX_LOG_WARN, session->log, 0,
+            "ngx_shared_file_open: error allocate part for session %V (%V)", session_id);
+
         ngx_shared_file_unlock(shfile);
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
@@ -405,6 +436,9 @@ ngx_shared_file_write(ngx_shared_file_session_t *session, const u_char *data, si
     size_t                      skip = 0;
 
     if (shpart->pos + length > (shpart->pos + shpart->end + 1)) {
+        ngx_log_error(NGX_LOG_WARN, session->log, 0,
+            "ngx_shared_file_write: invalid size for write session %V", &session->shfile->id.str);
+
         return NGX_HTTP_BAD_REQUEST;
     }
 
@@ -420,6 +454,9 @@ ngx_shared_file_write(ngx_shared_file_session_t *session, const u_char *data, si
     }
 
     if (ngx_write_file(file, (u_char *) data + skip, length - skip, shpart->pos) == NGX_ERROR) {
+        ngx_log_error(NGX_LOG_WARN, session->log, ngx_errno,
+            "ngx_shared_file_write: error write data session %V", &session->shfile->id.str);
+
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
 
@@ -476,6 +513,13 @@ ngx_shared_file_session_md5_calc(ngx_shared_file_session_t *session)
 
         readed_bytes = ngx_read_file(session->file, buffer, need_bytes, current_offset);
         if (readed_bytes <= 0) {
+            ngx_log_error(NGX_LOG_WARN, session->log, ngx_errno,
+                "ngx_shared_file_session_md5_calc: error read data for md5 calc session %V", &session->shfile->id.str);
+
+            ngx_shared_file_lock(shfile);
+            shfile->md5_processed = 0;
+            ngx_shared_file_unlock(shfile);
+
             return NGX_ERROR;
         }
 
@@ -628,4 +672,3 @@ ngx_shared_file_get_ranges(ngx_shared_file_session_t *session, ngx_str_t *ranges
     ngx_shared_file_unlock(shfile);
     return NGX_OK;
 }
-
