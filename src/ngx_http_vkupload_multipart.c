@@ -27,8 +27,6 @@ ngx_http_vkupload_multipart_request_data_handler(ngx_http_vkupload_request_t *up
     ngx_http_vkupload_multipart_t  *multipart_upload = (ngx_http_vkupload_multipart_t *) upload;
     ngx_int_t                       rc = NGX_OK;
 
-    multipart_upload = ngx_http_get_module_ctx(upload->request, ngx_http_vkupload_module);
-
     for (; in; in = in->next) {
         rc = ngx_http_vkupload_multipartparser_execute(multipart_upload->parser, multipart_upload->parser_callbacks, in->buf);
 
