@@ -611,7 +611,7 @@ ngx_shared_file_get_ranges(ngx_shared_file_session_t *session, ngx_str_t *ranges
     ngx_shared_file_sh_t       *shfile = session->shfile;
     ngx_shared_file_part_sh_t  *shpart_i;
     ngx_queue_t                *shpart_q;
-    ngx_int_t                   part_counts;
+    ngx_int_t                   part_counts = 0;
     u_char                     *end;
 
     ngx_str_null(ranges);
