@@ -60,7 +60,7 @@ ngx_http_vkupload_headerparser_content_type(ngx_http_vkupload_content_type_e *ty
     *boundary = (ngx_str_t) ngx_null_string;
 
     if (content_type->len == 0) {
-        return NGX_HTTP_BAD_REQUEST;
+        return NGX_OK;
     }
 
     if (str_starts_with(content_type_start, content_type_end, "multipart/")) {
@@ -94,7 +94,7 @@ ngx_http_vkupload_headerparser_content_type(ngx_http_vkupload_content_type_e *ty
         }
 
         if (boundary_start_ptr == boundary_end_ptr) {
-            return NGX_HTTP_BAD_REQUEST;
+            return NGX_ERROR;
         }
 
         boundary->data = boundary_start_ptr;

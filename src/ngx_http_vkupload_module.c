@@ -4,53 +4,53 @@
 
 #include "ngx_http_vkupload_module.h"
 #include "ngx_http_vkupload_request.h"
-#include "ngx_http_vkupload_resumable.h"
-#include "ngx_shared_file.h"
+#include "ngx_http_vkupload_fields.h"
 
-static void *ngx_http_vkupload_create_loc_conf(ngx_conf_t *cf);
-static char *ngx_http_vkupload_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child);
+#include "shared_file/ngx_shared_file_manager.h"
 
-static char *ngx_http_vkupload_pass_set_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
-static char *ngx_conf_set_vkupload_field_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
-static char *ngx_http_vkupload_resumable_shared_zone_set_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
-static ngx_int_t  ngx_http_vkupload_resumable_init_zone(ngx_shm_zone_t *shzone, void *data);
+#include "handler/ngx_http_vkupload_multipart.h"
+#include "handler/ngx_http_vkupload_resumable.h"
 
-static ngx_path_init_t ngx_http_vkupload_temp_path = {
-    ngx_string(NGX_HTTP_CLIENT_TEMP_PATH), { 0, 0, 0 }
-};
+static ngx_int_t  ngx_http_vkupload_init(ngx_conf_t *cf);
+static void  *ngx_http_vkupload_create_main_conf(ngx_conf_t *cf);
+static void  *ngx_http_vkupload_create_loc_conf(ngx_conf_t *cf);
+static char  *ngx_http_vkupload_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child);
+
+static char  *ngx_http_vkupload_manager_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
+static char  *ngx_http_vkupload_pass_set_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
+static char  *ngx_conf_set_vkupload_key_val_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
+
+static ngx_int_t  ngx_http_vkupload_init_zone(ngx_shm_zone_t *shzone, void *data);
+
+static ngx_int_t  ngx_http_vkupload_request_handler(ngx_http_request_t *request);
+static void  ngx_http_vkupload_request_body_handler(ngx_http_request_t *request);
+static void  ngx_http_vkupload_request_read_event_handler(ngx_http_request_t *request);
 
 static ngx_command_t ngx_http_vkupload_commands[] = {
+    { ngx_string("vkupload_manager"),
+        NGX_HTTP_MAIN_CONF
+            |NGX_CONF_2MORE,
+        ngx_http_vkupload_manager_slot,
+        NGX_HTTP_MAIN_CONF_OFFSET,
+        offsetof(ngx_http_vkupload_main_conf_t, managers),
+        NULL
+    },
+
     { ngx_string("vkupload_pass"),
         NGX_HTTP_LOC_CONF
-            |NGX_CONF_TAKE1,
+            |NGX_CONF_TAKE2,
         ngx_http_vkupload_pass_set_slot,
         NGX_HTTP_LOC_CONF_OFFSET,
         0,
         NULL
     },
+
     { ngx_string("vkupload_field"),
         NGX_HTTP_LOC_CONF
             |NGX_CONF_TAKE2,
-        ngx_conf_set_vkupload_field_slot,
+        ngx_conf_set_vkupload_key_val_slot,
         NGX_HTTP_LOC_CONF_OFFSET,
         offsetof(ngx_http_vkupload_loc_conf_t, upload_fields),
-        NULL
-    },
-
-    { ngx_string("vkupload_file_path"),
-        NGX_HTTP_LOC_CONF
-            |NGX_CONF_TAKE1234,
-        ngx_conf_set_path_slot,
-        NGX_HTTP_LOC_CONF_OFFSET,
-        offsetof(ngx_http_vkupload_loc_conf_t, upload_file_path),
-        NULL
-    },
-    { ngx_string("vkupload_file_access"),
-        NGX_HTTP_LOC_CONF
-            |NGX_CONF_TAKE123,
-        ngx_conf_set_access_slot,
-        NGX_HTTP_LOC_CONF_OFFSET,
-        offsetof(ngx_http_vkupload_loc_conf_t, upload_file_access),
         NULL
     },
 
@@ -62,6 +62,7 @@ static ngx_command_t ngx_http_vkupload_commands[] = {
         offsetof(ngx_http_vkupload_loc_conf_t, multipart),
         NULL
     },
+
     { ngx_string("vkupload_multipart_field"),
         NGX_HTTP_LOC_CONF
             |NGX_CONF_TAKE1,
@@ -71,7 +72,6 @@ static ngx_command_t ngx_http_vkupload_commands[] = {
         NULL
     },
 
-
     { ngx_string("vkupload_resumable"),
         NGX_HTTP_LOC_CONF
             |NGX_CONF_TAKE1,
@@ -80,6 +80,7 @@ static ngx_command_t ngx_http_vkupload_commands[] = {
         offsetof(ngx_http_vkupload_loc_conf_t, resumable),
         NULL
     },
+
     { ngx_string("vkupload_resumable_session_name"),
         NGX_HTTP_LOC_CONF
             |NGX_CONF_TAKE1,
@@ -88,23 +89,15 @@ static ngx_command_t ngx_http_vkupload_commands[] = {
         offsetof(ngx_http_vkupload_loc_conf_t, resumable_session_name),
         NULL
     },
-    { ngx_string("vkupload_resumable_session_zone"),
-        NGX_HTTP_LOC_CONF
-            |NGX_CONF_TAKE12,
-        ngx_http_vkupload_resumable_shared_zone_set_slot,
-        NGX_HTTP_LOC_CONF_OFFSET,
-        offsetof(ngx_http_vkupload_loc_conf_t, resumable_session_shmem),
-        NULL
-    },
 
     ngx_null_command
 };
 
 static ngx_http_module_t ngx_http_vkupload_module_ctx = {
-    ngx_http_vkupload_request_fields_init,  /* preconfiguration */
-    NULL,                                   /* postconfiguration */
+    NULL,                                   /* preconfiguration */
+    ngx_http_vkupload_init,                 /* postconfiguration */
 
-    NULL,                                   /* create main configuration */
+    ngx_http_vkupload_create_main_conf,     /* create main configuration */
     NULL,                                   /* init main configuration */
 
     NULL,                                   /* create server configuration */
@@ -116,18 +109,51 @@ static ngx_http_module_t ngx_http_vkupload_module_ctx = {
 
 ngx_module_t ngx_http_vkupload_module = {
     NGX_MODULE_V1,
-    &ngx_http_vkupload_module_ctx,    /* module context */
-    ngx_http_vkupload_commands,         /* module directives */
-    NGX_HTTP_MODULE,                    /* module type */
-    NULL,                               /* init master */
-    NULL,                               /* init module */
-    NULL,                               /* init process */
-    NULL,                               /* init thread */
-    NULL,                               /* exit thread */
-    NULL,                               /* exit process */
-    NULL,                               /* exit master */
+    &ngx_http_vkupload_module_ctx,          /* module context */
+    ngx_http_vkupload_commands,             /* module directives */
+    NGX_HTTP_MODULE,                        /* module type */
+    NULL,                                   /* init master */
+    NULL,                                   /* init module */
+    NULL,                                   /* init process */
+    NULL,                                   /* init thread */
+    NULL,                                   /* exit thread */
+    NULL,                                   /* exit process */
+    NULL,                                   /* exit master */
     NGX_MODULE_V1_PADDING
 };
+
+static ngx_int_t
+ngx_http_vkupload_init(ngx_conf_t *cf)
+{
+    ngx_int_t  rc;
+
+    rc = ngx_http_vkupload_request_fields_init(cf);
+    if (rc != NGX_OK) {
+        return rc;
+    }
+
+    ngx_http_vkupload_request_handler_register(&ngx_http_vkupload_multipart_handler, cf);
+    ngx_http_vkupload_request_handler_register(&ngx_http_vkupload_resumable_handler, cf);
+
+    return NGX_OK;
+}
+
+static void *
+ngx_http_vkupload_create_main_conf(ngx_conf_t *cf)
+{
+    ngx_http_vkupload_main_conf_t  *conf;
+
+    conf = ngx_pcalloc(cf->pool, sizeof(ngx_http_vkupload_main_conf_t));
+    if (conf == NULL) {
+        return NULL;
+    }
+
+    if (ngx_array_init(&conf->managers, cf->pool, 4, sizeof(ngx_shared_file_manager_t *)) != NGX_OK) {
+        return NULL;
+    }
+
+    return conf;
+}
 
 static void *
 ngx_http_vkupload_create_loc_conf(ngx_conf_t *cf)
@@ -143,18 +169,16 @@ ngx_http_vkupload_create_loc_conf(ngx_conf_t *cf)
      * set by ngx_pcalloc():
      *
      *     conf->upload_url = { NULL, 0 };
-     *     conf->upload_file_path = NULL;
      */
 
+    conf->manager = NGX_CONF_UNSET_PTR;
     conf->upload_fields = NGX_CONF_UNSET_PTR;
-    conf->upload_file_access = NGX_CONF_UNSET_UINT;
 
     conf->multipart = NGX_CONF_UNSET;
     conf->multipart_fields = NGX_CONF_UNSET_PTR;
 
     conf->resumable = NGX_CONF_UNSET;
     conf->resumable_session_name = NGX_CONF_UNSET_PTR;
-    conf->resumable_session_shmem = NGX_CONF_UNSET_PTR;
 
     return conf;
 }
@@ -164,34 +188,16 @@ ngx_http_vkupload_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 {
     ngx_http_vkupload_loc_conf_t  *prev = parent;
     ngx_http_vkupload_loc_conf_t  *conf = child;
-    ngx_shared_file_manager_t     *manager;
 
+    ngx_conf_merge_ptr_value(conf->manager, prev->manager, NULL);
     ngx_conf_merge_str_value(conf->upload_url, prev->upload_url, "");
     ngx_conf_merge_ptr_value(conf->upload_fields, prev->upload_fields, NULL);
-
-    if (ngx_conf_merge_path_value(cf, &conf->upload_file_path, prev->upload_file_path,
-        &ngx_http_vkupload_temp_path) != NGX_OK)
-    {
-        return NGX_CONF_ERROR;
-    }
-
-    ngx_conf_merge_uint_value(conf->upload_file_access, prev->upload_file_access, 0600);
 
     ngx_conf_merge_value(conf->multipart, prev->multipart, 0);
     ngx_conf_merge_ptr_value(conf->multipart_fields, prev->multipart_fields, NULL);
 
     ngx_conf_merge_value(conf->resumable, prev->resumable, 0);
     ngx_conf_merge_ptr_value(conf->resumable_session_name, prev->resumable_session_name, NULL);
-    ngx_conf_merge_ptr_value(conf->resumable_session_shmem, prev->resumable_session_shmem, NULL);
-
-    if (conf->resumable_session_shmem) {
-        manager = conf->resumable_session_shmem->data;
-
-        if (manager->file_path == NULL) {
-            manager->file_path = conf->upload_file_path;
-            manager->file_access = conf->upload_file_access;
-        }
-    }
 
     return NGX_CONF_OK;
 }
@@ -199,32 +205,283 @@ ngx_http_vkupload_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 static char *
 ngx_http_vkupload_pass_set_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
-    ngx_http_vkupload_loc_conf_t  *vkupload_lconf = conf;
-    ngx_http_core_loc_conf_t      *http_core_lconf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_core_module);
+    ngx_http_vkupload_loc_conf_t    *vkupload_lconf = conf;
+    ngx_http_vkupload_main_conf_t   *vkupload_mconf = ngx_http_conf_get_module_main_conf(cf, ngx_http_vkupload_module);
+    ngx_http_core_loc_conf_t        *http_core_lconf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_core_module);
+    ngx_shared_file_manager_t      **managers, *manager = NULL;
+    ngx_str_t                       *manager_name, *name, *upload_url;
+    ngx_uint_t                       i;
 
-    ngx_str_t *upload_url;
-
-    if ((vkupload_lconf->upload_url.len != 0)) {
+    if (vkupload_lconf->manager != NGX_CONF_UNSET_PTR) {
         return "is duplicate";
     }
 
-    upload_url = &(((ngx_str_t *) cf->args->elts)[1]); 
+    manager_name = &(((ngx_str_t *) cf->args->elts)[1]);
+    if (manager_name->len == 0) {
+        return "empty value";
+    }
+
+    if (vkupload_lconf->upload_url.len != 0) {
+        return "is duplicate";
+    }
+
+    upload_url = &(((ngx_str_t *) cf->args->elts)[2]);
     if (upload_url->len == 0) {
         return "empty value";
     }
 
+    managers = vkupload_mconf->managers.elts;
+
+    for (i = 0; i < vkupload_mconf->managers.nelts; i++) {
+        name = &managers[i]->zone->shm.name;
+
+        if (name->len == manager_name->len
+            && ngx_strncmp(name->data, manager_name->data, manager_name->len) == 0)
+        {
+            manager = managers[i];
+            break;
+        }
+    }
+
+    if (manager == NULL) {
+        return "unknown manager zone";
+    }
+
     vkupload_lconf->upload_url = *upload_url;
+    vkupload_lconf->manager = manager;
+
     http_core_lconf->handler = ngx_http_vkupload_request_handler;
 
     return NGX_CONF_OK;
 }
 
 static char *
-ngx_conf_set_vkupload_field_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
+ngx_http_vkupload_manager_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
+{
+    char  *confp = conf;
+
+    u_char                      *last, *p, chmod[5];
+    ssize_t                      size;
+    ngx_str_t                    s, name, *value;
+    ngx_uint_t                   i, n, access;
+    ngx_array_t                 *managers;
+    ngx_shared_file_manager_t   *manager, **manager_ptr;
+    ngx_path_t                  *path;
+    ngx_shm_zone_t              *zone;
+
+    name.len = 0;
+    size = 0;
+
+    access = 0644;
+
+    manager = ngx_pcalloc(cf->pool, sizeof(ngx_shared_file_manager_t));
+    if (manager == NULL) {
+        return NGX_CONF_ERROR;
+    }
+
+    path = ngx_pcalloc(cf->pool, sizeof(ngx_path_t));
+    if (path == NULL) {
+        return NGX_CONF_ERROR;
+    }
+
+    value = cf->args->elts;
+
+    path->name = value[1];
+    if (path->name.data[path->name.len - 1] == '/') {
+        path->name.len--;
+    }
+
+    if (ngx_conf_full_name(cf->cycle, &path->name, 0) != NGX_OK) {
+        return NGX_CONF_ERROR;
+    }
+
+    for (i = 2; i < cf->args->nelts; i++) {
+
+        if (ngx_strncmp(value[i].data, "access=", 7) == 0) {
+
+            p = value[i].data + 7;
+            last = value[i].data + value[i].len;
+
+            if ((last - p) != 4 || *p != '0') {
+                goto invalid_access;
+            }
+
+            ngx_memcpy(chmod, p, 4);
+            chmod[4] = '\0';
+
+            access = strtol((char *) chmod, NULL, 8);
+
+            if (access != 0) {
+                continue;
+            }
+
+        invalid_access:
+
+            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                               "invalid \"access\" \"%V\"", &value[i]);
+            return NGX_CONF_ERROR;
+        }
+
+        if (ngx_strncmp(value[i].data, "levels=", 7) == 0) {
+
+            p = value[i].data + 7;
+            last = value[i].data + value[i].len;
+
+            for (n = 0; n < NGX_MAX_PATH_LEVEL && p < last; n++) {
+
+                if (*p > '0' && *p < '3') {
+
+                    path->level[n] = *p++ - '0';
+                    path->len += path->level[n] + 1;
+
+                    if (p == last) {
+                        break;
+                    }
+
+                    if (*p++ == ':' && n < NGX_MAX_PATH_LEVEL - 1 && p < last) {
+                        continue;
+                    }
+
+                    goto invalid_levels;
+                }
+
+                goto invalid_levels;
+            }
+
+            if (path->len < 10 + NGX_MAX_PATH_LEVEL) {
+                continue;
+            }
+
+        invalid_levels:
+
+            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                               "invalid \"levels\" \"%V\"", &value[i]);
+            return NGX_CONF_ERROR;
+        }
+
+        if (ngx_strncmp(value[i].data, "zone=", 5) == 0) {
+
+            name.data = value[i].data + 5;
+
+            p = (u_char *) ngx_strchr(name.data, ':');
+
+            if (p == NULL) {
+                ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                                   "invalid keys zone size \"%V\"", &value[i]);
+                return NGX_CONF_ERROR;
+            }
+
+            name.len = p - name.data;
+
+            s.data = p + 1;
+            s.len = value[i].data + value[i].len - s.data;
+
+            size = ngx_parse_size(&s);
+
+            if (size == NGX_ERROR) {
+                ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                                   "invalid keys zone size \"%V\"", &value[i]);
+                return NGX_CONF_ERROR;
+            }
+
+            if (size < (ssize_t) (16 * ngx_pagesize)) {
+                ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                                   "keys zone \"%V\" is too small", &value[i]);
+                return NGX_CONF_ERROR;
+            }
+
+            continue;
+        }
+
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                           "invalid parameter \"%V\"", &value[i]);
+        return NGX_CONF_ERROR;
+    }
+
+    if (name.len == 0 || size == 0) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                           "\"%V\" must have \"zone\" parameter",
+                           &cmd->name);
+        return NGX_CONF_ERROR;
+    }
+
+    path->manager = ngx_http_vkupload_manager_handler;
+    path->data = manager;
+    path->conf_file = cf->conf_file->file.name.data;
+    path->line = cf->conf_file->line;
+
+    manager->access = access;
+    manager->path = path;
+    if (ngx_add_path(cf, &manager->path) != NGX_OK) {
+        return NGX_CONF_ERROR;
+    }
+
+    zone = ngx_shared_memory_add(cf, &name, size, &ngx_http_vkupload_module);
+    if (zone == NULL) {
+        return NGX_CONF_ERROR;
+    }
+
+    if (zone->data) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                           "duplicate zone \"%V\"", &name);
+        return NGX_CONF_ERROR;
+    }
+
+    zone->init = ngx_http_vkupload_init_zone;
+    zone->data = manager;
+    manager->zone = zone;
+
+    managers = (ngx_array_t *) (confp + cmd->offset);
+
+    manager_ptr = ngx_array_push(managers);
+    if (manager_ptr == NULL) {
+        return NGX_CONF_ERROR;
+    }
+
+    *manager_ptr = manager;
+
+    return NGX_CONF_OK;
+}
+
+static ngx_int_t
+ngx_http_vkupload_init_zone(ngx_shm_zone_t *zone, void *data)
+{
+    ngx_shared_file_manager_t  *manager_old = data;
+    ngx_shared_file_manager_t  *manager = zone->data;
+    ngx_uint_t                  n;
+
+    if (manager_old) {
+        if (ngx_strcmp(manager->path->name.data, manager_old->path->name.data) != 0) {
+            ngx_log_error(NGX_LOG_EMERG, zone->shm.log, 0,
+                          "cache \"%V\" uses the \"%V\" cache path "
+                          "while previously it used the \"%V\" cache path",
+                          &zone->shm.name, &manager->path->name,
+                          &manager_old->path->name);
+
+            return NGX_ERROR;
+        }
+
+        for (n = 0; n < NGX_MAX_PATH_LEVEL; n++) {
+            if (manager->path->level[n] != manager_old->path->level[n]) {
+                ngx_log_error(NGX_LOG_EMERG, zone->shm.log, 0,
+                              "cache \"%V\" had previously different levels",
+                              &zone->shm.name);
+                return NGX_ERROR;
+            }
+        }
+
+        return ngx_shared_file_manager_copy(manager, manager_old);
+    }
+
+    return ngx_shared_file_manager_init(manager, zone);
+}
+
+static char *
+ngx_conf_set_vkupload_key_val_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
     char  *p = conf;
 
-    ngx_http_vkupload_field_conf_t  *field;
+    ngx_http_vkupload_key_val_t    *field;
     ngx_int_t                        n;
     ngx_str_t                       *value;
     ngx_http_script_compile_t        sc;
@@ -233,7 +490,7 @@ ngx_conf_set_vkupload_field_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     fields = (ngx_array_t **) (p + cmd->offset);
 
     if (*fields == NGX_CONF_UNSET_PTR) {
-        *fields = ngx_array_create(cf->pool, 1, sizeof(ngx_http_vkupload_field_conf_t));
+        *fields = ngx_array_create(cf->pool, 1, sizeof(ngx_http_vkupload_key_val_t));
 
         if (*fields == NULL) {
             return NGX_CONF_ERROR;
@@ -298,75 +555,105 @@ ngx_conf_set_vkupload_field_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     return NGX_CONF_OK;
 }
 
-char *
-ngx_http_vkupload_resumable_shared_zone_set_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
-{
-    ngx_shared_file_manager_t             *manager;
-    ngx_shm_zone_t                       **slot;
-    ngx_shm_zone_t                        *shzone;
-    ngx_str_t                             *value;
-    ssize_t                                size;
-    char                                  *p = conf;
-
-    slot = (ngx_shm_zone_t **) (p + cmd->offset);
-
-    if (*slot != NGX_CONF_UNSET_PTR) {
-        return "is duplicate";
-    }
-
-    value = cf->args->elts;
-
-    if (!value[1].len) {
-        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                           "invalid zone name \"%V\"", &value[1]);
-        return NGX_CONF_ERROR;
-    }
-
-    if (cf->args->nelts == 3) {
-        size = ngx_parse_size(&value[2]);
-
-        if (size == NGX_ERROR) {
-            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                "invalid zone size \"%V\"", &value[2]);
-            return NGX_CONF_ERROR;
-        }
-
-        if (size < (ssize_t) (8 * ngx_pagesize)) {
-            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                "zone \"%V\" is too small", &value[1]);
-            return NGX_CONF_ERROR;
-        }
-    } else {
-        size = 0;
-    }
-
-    manager = ngx_pcalloc(cf->pool, sizeof(ngx_shared_file_manager_t));
-    if (manager == NULL) {
-        return NGX_CONF_ERROR;
-    }
-
-    shzone = ngx_shared_memory_add(cf, &value[1], size, &ngx_http_vkupload_module);
-    if (shzone == NULL) {
-        return NGX_CONF_ERROR;
-    }
-
-    shzone->init = ngx_http_vkupload_resumable_init_zone;
-    shzone->data = manager;
-
-    *slot = shzone;
-
-    return NGX_CONF_OK;
-}
+/** --- handlers --- **/
 
 static ngx_int_t
-ngx_http_vkupload_resumable_init_zone(ngx_shm_zone_t *shzone, void *data)
+ngx_http_vkupload_request_handler(ngx_http_request_t *request)
 {
-    ngx_shared_file_manager_t  *manager_old = data;
-    ngx_shared_file_manager_t  *manager = shzone->data;
+    ngx_http_vkupload_request_t  *vkupload;
+    ngx_int_t                     rc;
 
-    if (manager_old) {
-        return ngx_shared_file_manager_copy(manager, manager_old);
+    rc = ngx_http_vkupload_request_handler_find(request, &vkupload);
+    if (rc != NGX_OK) {
+        return rc;
     }
 
-    return ngx_shared_file_manager_init(manager, shzone);
+    ngx_http_set_ctx(request, vkupload, ngx_http_vkupload_module);
+    request->request_body_no_buffering = 1;
+
+    rc = ngx_http_read_client_request_body(request, ngx_http_vkupload_request_body_handler);
+    if (rc >= NGX_HTTP_SPECIAL_RESPONSE) {
+        return ngx_http_vkupload_request_finalize_handler(vkupload, rc);
+    }
+
+    return NGX_DONE;
+}
+
+static void
+ngx_http_vkupload_request_body_handler(ngx_http_request_t *request)
+{
+    ngx_http_vkupload_request_t  *vkupload;
+    ngx_http_request_body_t      *request_body;
+    ngx_int_t                     rc;
+
+    vkupload = ngx_http_get_module_ctx(request, ngx_http_vkupload_module);
+    if (vkupload == NULL) {
+        ngx_http_finalize_request(request, NGX_HTTP_INTERNAL_SERVER_ERROR);
+        return;
+    }
+
+    request_body = request->request_body;
+    if (request_body == NULL) {
+        ngx_http_vkupload_request_finalize(vkupload, NGX_HTTP_INTERNAL_SERVER_ERROR);
+        return;
+    }
+
+    rc = vkupload->handler->data(vkupload, request_body->bufs);
+    if (rc != NGX_OK) {
+        ngx_http_vkupload_request_finalize(vkupload, rc);
+        return;
+    }
+
+    if (request->reading_body) {
+        request->read_event_handler = ngx_http_vkupload_request_read_event_handler;
+    } else {
+        ngx_http_vkupload_request_finalize(vkupload, NGX_OK);
+        return;
+    }
+}
+
+static void
+ngx_http_vkupload_request_read_event_handler(ngx_http_request_t *request)
+{
+    ngx_http_vkupload_request_t  *vkupload;
+    ngx_http_request_body_t      *request_body;
+    ngx_int_t                     rc, rc_data;
+
+    vkupload = ngx_http_get_module_ctx(request, ngx_http_vkupload_module);
+    request_body = request->request_body;
+
+    if (ngx_exiting || ngx_terminate) {
+        ngx_http_vkupload_request_finalize(vkupload, NGX_HTTP_CLOSE);
+
+        return;
+    }
+
+     for ( ;; ) {
+        rc = ngx_http_read_unbuffered_request_body(request);
+
+        if (rc >= NGX_HTTP_SPECIAL_RESPONSE) {
+            ngx_http_vkupload_request_finalize(vkupload, rc);
+
+            return;
+        }
+
+        if (request_body->bufs == NULL) {
+            return;
+        }
+
+        rc_data = vkupload->handler->data(vkupload, request_body->bufs);
+        if (rc_data != NGX_OK) {
+            ngx_http_vkupload_request_finalize(vkupload, rc_data);
+
+            return;
+        }
+
+        if (rc == NGX_OK) {
+            ngx_http_vkupload_request_finalize(vkupload, NGX_OK);
+
+            return;
+        }
+
+        request_body->bufs = NULL;
+    }
 }

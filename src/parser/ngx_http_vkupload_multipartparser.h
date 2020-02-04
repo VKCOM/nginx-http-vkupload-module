@@ -14,18 +14,18 @@ typedef ngx_int_t (*ngx_http_vkupload_multipart_data_pt) (ngx_http_vkupload_mult
 typedef ngx_int_t (*ngx_http_vkupload_multipart_header_pt) (ngx_http_vkupload_multipartparser_t *parser, const ngx_str_t *name, const ngx_str_t *value);
 
 struct ngx_http_vkupload_multipartparser_s {
-    void       *data;
+    void *data;
 
-    ngx_str_t   boundary;
+    ngx_str_t boundary;
 
-    uint16_t    index;
-    uint16_t    state;
+    uint16_t index;
+    uint16_t state;
 
-    u_char      header_name[VKUPLOAD_MULTIPARTPARSER_HEADER_NAME_BUFFER_SIZE];
-    uint16_t    header_name_len;
+    u_char header_name[VKUPLOAD_MULTIPARTPARSER_HEADER_NAME_BUFFER_SIZE];
+    uint16_t header_name_len;
 
-    u_char      header_value[VKUPLOAD_MULTIPARTPARSER_HEADER_VALUE_BUFFER_SIZE];
-    uint16_t    header_value_len;
+    u_char header_value[VKUPLOAD_MULTIPARTPARSER_HEADER_VALUE_BUFFER_SIZE];
+    uint16_t header_value_len;
 };
 
 struct ngx_http_vkupload_multipartparser_callbacks_s {

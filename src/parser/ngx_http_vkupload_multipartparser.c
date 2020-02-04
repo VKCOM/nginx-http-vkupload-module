@@ -10,13 +10,13 @@
 #define CALLBACK_NOTIFY(NAME)                               \
     if (callbacks->on_##NAME != NULL) {                     \
         if ((rc = callbacks->on_##NAME(parser)) != NGX_OK)  \
-            goto error;                                     \
+            goto exit;                                      \
     }
 
 #define CALLBACK_DATA(NAME, P, S)                                                                           \
     if (callbacks->on_##NAME != NULL) {                                                                     \
         if ((rc = callbacks->on_##NAME(parser, & (ngx_str_t) { .data = (u_char *) P, .len = S })) != 0) {   \
-            goto error;                                                                                     \
+            goto exit;                                                                                      \
         }                                                                                                   \
     }
 
@@ -26,7 +26,7 @@
             & (ngx_str_t) { .data = (u_char *) N, .len = NL },         \
             & (ngx_str_t) { .data = (u_char *) V, .len = VL })) != 0)  \
         {                                                              \
-            goto error;                                                \
+            goto exit;                                                 \
         }                                                              \
     }
 
@@ -118,10 +118,14 @@ ngx_int_t
 ngx_http_vkupload_multipartparser_execute(ngx_http_vkupload_multipartparser_t *parser,
     ngx_http_vkupload_multipartparser_callbacks_t *callbacks, ngx_buf_t *buf)
 {
-    const u_char  *mark;
-    u_char         c;
+    const u_char *mark;
+    u_char c;
 
-    ngx_int_t rc = NGX_OK;
+    ngx_int_t rc;
+
+    if (buf->pos == buf->last) {
+        return NGX_OK;
+    }
 
     for (; buf->pos < buf->last; ++buf->pos) {
         c = *(buf->pos);
@@ -207,7 +211,7 @@ reexecute:
                 }
 
                 if (buf->pos == buf->last) {
-                    goto error;
+                    goto data_end;
                 }
 
                 goto error;
@@ -241,7 +245,7 @@ reexecute:
                 }
 
                 if (buf->pos == buf->last) {
-                    goto error;
+                    goto data_end;
                 }
 
                 break;
@@ -286,7 +290,7 @@ reexecute:
                 }
 
                 if (buf->pos == buf->last) {
-                    goto error;
+                    goto data_end;
                 }
 
                 break;
@@ -327,7 +331,7 @@ reexecute:
             case ngx_mp_st_data_boundary_start:
                 parser->index = 0;
                 parser->state = ngx_mp_st_data_boundary;
-                // fallthrough;
+                __attribute__ ((fallthrough));
 
             case ngx_mp_st_data_boundary:
                 if (parser->index == parser->boundary.len) {
@@ -342,6 +346,7 @@ reexecute:
                     break;
                 }
 
+                CALLBACK_DATA(data, "\r\n--", 4);
                 CALLBACK_DATA(data, parser->boundary.data, parser->index);
                 parser->state = ngx_mp_st_data;
 
@@ -388,6 +393,12 @@ reexecute:
         }
     }
 
+data_end:
+    return NGX_OK;
+
 error:
+    return NGX_ERROR;
+
+exit:
     return rc;
 }
