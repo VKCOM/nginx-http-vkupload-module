@@ -313,10 +313,8 @@ ngx_shared_file_set_total(ngx_shared_file_t *file, size_t total_size, size_t par
         node->total_known = 1;
     }
 
-    if (!node->total_known && total_size == 0) {
-        if (part_end_offset > node->total_size) {
-            node->total_size = part_end_offset;
-        }
+    if (!node->total_known && total_size == 0 && part_end_offset > node->total_size) {
+        node->total_size = part_end_offset;
     }
 
     ngx_shared_file_node_unlock(node);
