@@ -156,6 +156,10 @@ ngx_shared_file_write(ngx_shared_file_writer_t *writer, u_char *data, size_t len
         ngx_queue_head(&node->parts) == ngx_queue_last(&node->parts))
     {
         if (node->linar_size == part->pos) {
+            ngx_log_debug4(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
+                "%s: %V - update linar_size %z > %z", __FUNCTION__, &node->id.str,
+                node->linar_size, node->linar_size + len);
+
             node->processed = 1;
             node->linar_size += len;
 
@@ -199,6 +203,7 @@ ngx_shared_file_writer_close(ngx_shared_file_writer_t *writer)
 {
     ngx_shared_file_node_t     *node = writer->file->node;
     ngx_shared_file_manager_t  *manager = writer->file->manager;
+    size_t                      linar_size;
 
     if (writer->part == NULL) {
         return;
@@ -207,7 +212,15 @@ ngx_shared_file_writer_close(ngx_shared_file_writer_t *writer)
     ngx_shared_file_node_lock(node);
 
     ngx_shared_file_complete_part(writer->part);
-    node->linar_size = ngx_shared_file_merge_parts(manager->pool, &node->parts, node->linar_size);
+    linar_size = ngx_shared_file_merge_parts(manager->pool, &node->parts, node->linar_size);
+
+    if (linar_size != node->linar_size) {
+        ngx_log_debug4(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
+                "%s: %V - update linar_size %z > %z", __FUNCTION__, &node->id.str,
+                node->linar_size, linar_size);
+
+        node->linar_size = linar_size;
+    }
 
     ngx_shared_file_node_unlock(node);
     writer->part = NULL;

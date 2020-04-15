@@ -88,6 +88,9 @@ ngx_http_vkupload_manager_handler(void *data)
         node = node_for_remove[i];
         node->timeouted = 1;
 
+        ngx_log_debug2(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
+            "%s: %V - timeouted", __FUNCTION__, &node->id.str);
+
         ngx_shared_file_node_decref(manager, node);
     }
 

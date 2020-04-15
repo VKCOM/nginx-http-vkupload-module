@@ -108,7 +108,15 @@ ngx_shared_file_node_decref(ngx_shared_file_manager_t *manager, ngx_shared_file_
 
     --node->uses;
 
+    ngx_log_debug5(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
+        "%s: %V (c:%d, e:%d, t:%d) - decref", __FUNCTION__, &node->id.str,
+            node->completed, node->error, node->timeouted);
+
     if (node->uses == 0 && (node->completed || node->error || node->timeouted)) {
+        ngx_log_debug5(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
+            "%s: %V (c:%d, e:%d, t:%d) - delete node", __FUNCTION__, &node->id.str,
+            node->completed, node->error, node->timeouted);
+
         if (node->id.node.key) {
             ngx_rbtree_delete(&manager->tree->rbtree, &node->id.node);
             node->id.node.key = 0;
@@ -123,6 +131,9 @@ ngx_shared_file_node_decref(ngx_shared_file_manager_t *manager, ngx_shared_file_
 
         if (node->path.len) {
             if (node->error || node->timeouted) {
+                ngx_log_debug3(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
+                    "%s: %V - delete file %V", __FUNCTION__, &node->id.str, &node->path);
+
                 if (ngx_delete_file(node->path.data) == NGX_FILE_ERROR) {
                     err = ngx_errno;
 
@@ -182,6 +193,9 @@ ngx_shared_file_open(ngx_shared_file_t *file, ngx_str_t *session_id)
 
         manager->uniq++;
 
+        ngx_log_debug2(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
+            "%s: %V - create anonymus node", __FUNCTION__, session_id);
+
         node = ngx_shared_file_manager_find_node_locked(manager, session_id);
         if (node != NULL) {
             return NGX_ERROR;
@@ -191,14 +205,17 @@ ngx_shared_file_open(ngx_shared_file_t *file, ngx_str_t *session_id)
     } else {
         node = ngx_shared_file_manager_find_node_locked(manager, session_id);
         if (node == NULL) {
+            ngx_log_debug2(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
+             "%s: %V - create node", __FUNCTION__, session_id);
+
             node = ngx_shared_file_manager_create_node_locked(manager, session_id);
+        } else {
+            ngx_log_debug2(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
+                "%s: %V - open node", __FUNCTION__, session_id);
+
+            // foreach node plugins, find in plugins, connect
         }
     }
-
-    // node = ngx_shared_file_manager_find_node_locked(manager, session_id);
-    // if (node == NULL) {
-    //     node = ngx_shared_file_manager_create_node_locked(manager, session_id);
-    // }
 
     if (node) {
         ngx_shared_file_node_incref(manager, node); // for current request
@@ -267,6 +284,11 @@ ngx_shared_file_set_total(ngx_shared_file_t *file, size_t total_size, size_t par
     size_t                   part_end_offset = part_offset + part_size;
 
     ngx_shared_file_node_lock(node);
+
+    ngx_log_debug7(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
+        "%s: %V (t: %z, tk: %d) - set total (t: %z, po: %z, ps: %z)", __FUNCTION__, &node->id.str,
+        node->total_size, node->total_known,
+        total_size, part_offset, part_size);
 
     if (total_size && total_size < part_end_offset) {
         ngx_log_error(NGX_LOG_WARN, file->log, 0,
@@ -337,6 +359,10 @@ ngx_shared_file_complete_if_uploaded(ngx_shared_file_t *file)
         ngx_queue_empty(&node->parts))
     {
         node->completed = 1;
+
+        ngx_log_debug2(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
+            "%s: %V - completed", __FUNCTION__, &node->id.str);
+
         ngx_shared_file_node_unlock(node);
         return NGX_OK;
     }
