@@ -7,7 +7,8 @@
 #include "shared_file/ngx_shared_file_writer.h"
 #include "shared_file/ngx_shared_file_manager.h"
 
-static ngx_int_t  ngx_shared_file_writer_run_plugins(ngx_shared_file_writer_t *writer);
+static ngx_int_t
+ngx_shared_file_buffer_preload(ngx_shared_file_writer_t *writer, ngx_buf_t *buffer);
 
 ngx_int_t
 ngx_shared_file_writer_open(ngx_shared_file_writer_t *writer, size_t offset, size_t size)
@@ -73,7 +74,7 @@ ngx_shared_file_writer_open(ngx_shared_file_writer_t *writer, size_t offset, siz
                 __FUNCTION__, &node->id.str, &writer->stream.name);
 
             ngx_shared_file_node_unlock(node);
-            return NGX_ERROR;
+            return NGX_ERROR; // TODO: try re-create file
         }
 
         cln->handler = ngx_pool_cleanup_file;
@@ -124,7 +125,7 @@ ngx_shared_file_write(ngx_shared_file_writer_t *writer, u_char *data, size_t len
 
     linar_size = node->linar_size;
 
-    if (linar_size > part->pos) {
+    if (linar_size > part->pos) { // avoid rewrite already exists content
         if (linar_size > part->pos + len) {
             // skip write
             part->pos += len;
@@ -146,7 +147,7 @@ ngx_shared_file_write(ngx_shared_file_writer_t *writer, u_char *data, size_t len
         ngx_log_error(NGX_LOG_WARN, stream->log, ngx_errno,
             "%s: error write data session %V", __FUNCTION__, &node->id.str);
 
-        return NGX_HTTP_INTERNAL_SERVER_ERROR;
+        return NGX_ERROR;
     }
 
     ngx_shared_file_node_lock(node);
@@ -175,12 +176,13 @@ ngx_shared_file_write(ngx_shared_file_writer_t *writer, u_char *data, size_t len
 
             rc = ngx_shared_file_plugins_run(writer, &buffer);
             if (rc != NGX_OK) {
-                return rc;
+                ngx_log_error(NGX_LOG_WARN, writer->stream.log, 0,
+                    "%s: error call plugins plugins %V (%d)", __FUNCTION__, &node->id.str, rc);
             }
 
             ngx_shared_file_node_lock(node);
 
-            node->processed_size += len;
+            node->processed_size += ngx_buf_size((&buffer));
             node->processed = 0;
         }
     }
@@ -196,7 +198,9 @@ ngx_shared_file_writer_close(ngx_shared_file_writer_t *writer)
 {
     ngx_shared_file_node_t     *node = writer->file->node;
     ngx_shared_file_manager_t  *manager = writer->file->manager;
+    ngx_buf_t                   buffer;
     size_t                      linar_size;
+    ngx_int_t                   rc;
 
     if (writer->part == NULL) {
         return;
@@ -205,62 +209,88 @@ ngx_shared_file_writer_close(ngx_shared_file_writer_t *writer)
     ngx_shared_file_node_lock(node);
 
     ngx_shared_file_complete_part(writer->part);
+    writer->part = NULL;
+
     linar_size = ngx_shared_file_merge_parts(manager->pool, &node->parts, node->linar_size);
 
     if (linar_size != node->linar_size) {
         ngx_log_debug4(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
-                "%s: %V - update linar_size %z > %z", __FUNCTION__, &node->id.str,
-                node->linar_size, linar_size);
+            "%s: %V - update linar_size %z > %z", __FUNCTION__, &node->id.str,
+            node->linar_size, linar_size);
 
         node->linar_size = linar_size;
     }
 
-    ngx_shared_file_node_unlock(node);
-    writer->part = NULL;
+    if (node->processed == 0) {
+        node->processed = 1;
 
-    ngx_shared_file_writer_run_plugins(writer);
+        while (node->linar_size > node->processed_size) {
+            ngx_memzero(&buffer, sizeof(ngx_buf_t));
+
+            buffer.in_file = 1;
+            buffer.file = &writer->stream;
+            buffer.file_pos = node->linar_size;
+            buffer.file_last = node->linar_size + (node->linar_size - node->processed_size);
+
+            ngx_shared_file_node_unlock(node);
+
+            if (manager->plugins_need_in_memory) {
+                rc = ngx_shared_file_buffer_preload(writer, &buffer);
+                if (rc != NGX_OK) {
+                    ngx_log_error(NGX_LOG_WARN, writer->stream.log, ngx_errno,
+                        "%s: error preload data for plugins %V", __FUNCTION__, &node->id.str);
+                }
+            }
+
+            rc = ngx_shared_file_plugins_run(writer, &buffer);
+            if (rc != NGX_OK) {
+                ngx_log_error(NGX_LOG_WARN, writer->stream.log, 0,
+                    "%s: error call plugins plugins %V (%d)", __FUNCTION__, &node->id.str, rc);
+            }
+
+            ngx_shared_file_node_lock(node);
+
+            node->processed_size += ngx_buf_size((&buffer));
+        }
+
+        node->processed = 0;
+    }
+
+    ngx_shared_file_node_unlock(node);
 }
 
 static ngx_int_t
-ngx_shared_file_writer_run_plugins(ngx_shared_file_writer_t *writer)
+ngx_shared_file_buffer_preload(ngx_shared_file_writer_t *writer, ngx_buf_t *buffer)
 {
-    ngx_shared_file_node_t     *node = writer->file->node;
-    ngx_buf_t                   buffer;
-    ngx_int_t                   rc;
+    size_t   size, buffer_size = 16 * 4096;
+    ssize_t  n;
 
-    ngx_shared_file_node_lock(node);
+    if (writer->buffer == NULL) {
+        writer->buffer = ngx_create_temp_buf(writer->file->pool, buffer_size);
 
-    if (node->processed) {
-        ngx_shared_file_node_unlock(node);
-        return NGX_OK;
-    }
-
-    node->processed = 1;
-
-    while (node->linar_size > node->processed_size) {
-        ngx_memzero(&buffer, sizeof(ngx_buf_t));
-
-        buffer.in_file = 1;
-        buffer.file = &writer->stream;
-        buffer.file_pos = node->linar_size;
-        buffer.file_last = node->linar_size + (node->linar_size - node->processed_size);
-
-        ngx_shared_file_node_unlock(node);
-
-        // todo: optimization need_memory flag
-
-        rc = ngx_shared_file_plugins_run(writer, &buffer);
-        if (rc != NGX_OK) {
-            return rc;
+        if (writer->buffer == NULL) {
+            return NGX_ERROR;
         }
-
-        ngx_shared_file_node_lock(node);
-
-        node->processed_size += (buffer.file_last - buffer.file_pos);
     }
 
-    node->processed = 0;
+    size = ngx_buf_size(buffer);
+    if (size > buffer_size) {
+        size = buffer_size;
+    }
 
-    ngx_shared_file_node_unlock(node);
+    buffer->start = writer->buffer->pos;
+    buffer->end = writer->buffer->end;
+
+    buffer->pos = buffer->start;
+    buffer->last = buffer->start;
+
+    n = ngx_read_file(buffer->file, buffer->pos, size, buffer->file_pos);
+    if (n == NGX_ERROR || n == 0) {
+        return NGX_ERROR;
+    }
+
+    buffer->last += n;
+    buffer->memory = 1;
+
     return NGX_OK;
 }

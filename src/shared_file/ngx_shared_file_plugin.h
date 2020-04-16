@@ -12,8 +12,7 @@
 typedef struct ngx_shared_file_plugin_s  ngx_shared_file_plugin_t;
 
 typedef ngx_int_t (*ngx_shared_file_plugin_conf_pt)(ngx_conf_t *cf);
-typedef ngx_int_t (*ngx_shared_file_plugin_handler_pt)(ngx_shared_file_writer_t *writer, ngx_shared_file_plugin_t *plugin,
-    ngx_buf_t *buffer);
+typedef ngx_int_t (*ngx_shared_file_plugin_handler_pt)(ngx_shared_file_writer_t *writer, ngx_buf_t *buffer);
 
 
 struct ngx_shared_file_plugin_s {

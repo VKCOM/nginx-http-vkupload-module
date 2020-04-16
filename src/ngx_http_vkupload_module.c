@@ -490,14 +490,15 @@ ngx_http_vkupload_init_zone(ngx_shm_zone_t *zone, void *data)
     ngx_shared_file_manager_t  *manager_old = data;
     ngx_shared_file_manager_t  *manager = zone->data;
     ngx_uint_t                  n;
+    ngx_int_t                   i;
 
     if (manager_old) {
         if (ngx_strcmp(manager->path->name.data, manager_old->path->name.data) != 0) {
             ngx_log_error(NGX_LOG_EMERG, zone->shm.log, 0,
-                          "cache \"%V\" uses the \"%V\" cache path "
-                          "while previously it used the \"%V\" cache path",
-                          &zone->shm.name, &manager->path->name,
-                          &manager_old->path->name);
+                "vkupload \"%V\" uses the \"%V\" vkupload path "
+                "while previously it used the \"%V\" vkupload path",
+                &zone->shm.name, &manager->path->name,
+                &manager_old->path->name);
 
             return NGX_ERROR;
         }
@@ -505,9 +506,31 @@ ngx_http_vkupload_init_zone(ngx_shm_zone_t *zone, void *data)
         for (n = 0; n < NGX_MAX_PATH_LEVEL; n++) {
             if (manager->path->level[n] != manager_old->path->level[n]) {
                 ngx_log_error(NGX_LOG_EMERG, zone->shm.log, 0,
-                              "cache \"%V\" had previously different levels",
-                              &zone->shm.name);
+                    "vkupload \"%V\" had previously different levels",
+                    &zone->shm.name);
+
                 return NGX_ERROR;
+            }
+        }
+
+        if (manager->plugins_count != manager_old->plugins_count) {
+            ngx_log_error(NGX_LOG_EMERG, zone->shm.log, 0,
+                "vkupload \"%V\" had previously different count plugins",
+                &zone->shm.name);
+
+            return NGX_ERROR;
+        }
+
+        for (i = 0; i < manager->plugins_count; i++) {
+            if (manager->plugins[i]->name.len != manager_old->plugins[i]->name.len ||
+                ngx_strncmp(manager->plugins[i]->name.data,
+                    manager_old->plugins[i]->name.data, manager->plugins[i]->name.len) != 0)
+            {
+                ngx_log_error(NGX_LOG_EMERG, zone->shm.log, 0,
+                    "vkupload \"%V\" had previously different plugins",
+                    &zone->shm.name);
+
+            return NGX_ERROR;
             }
         }
 

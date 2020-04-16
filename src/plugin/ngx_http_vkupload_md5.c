@@ -17,8 +17,7 @@
 
 static ngx_int_t ngx_http_vkupload_md5_variable(ngx_http_request_t *request, ngx_http_variable_value_t *v, uintptr_t data);
 static ngx_int_t ngx_http_vkupload_md5_configuration(ngx_conf_t *cf);
-static ngx_int_t ngx_http_vkupload_md5_handler(ngx_shared_file_writer_t *writer, ngx_shared_file_plugin_t *plugin,
-    ngx_buf_t *buffer);
+static ngx_int_t ngx_http_vkupload_md5_handler(ngx_shared_file_writer_t *writer, ngx_buf_t *buffer);
 
 
 ngx_shared_file_plugin_t ngx_http_vkupload_md5 = {
@@ -31,6 +30,7 @@ ngx_shared_file_plugin_t ngx_http_vkupload_md5 = {
 typedef struct {
     ngx_md5_t  md5;
     u_char     md5_str[NGX_HTTP_VKUPLOAD_MD5_DIGEST_LENGTH_STR];
+    ngx_int_t  complete;
 } ngx_http_vkupload_md5_ctx_t;
 
 
@@ -51,56 +51,38 @@ ngx_http_vkupload_md5_configuration(ngx_conf_t *cf)
 }
 
 static ngx_int_t
-ngx_http_vkupload_md5_handler(ngx_shared_file_writer_t *writer, ngx_shared_file_plugin_t *plugin,
-    ngx_buf_t *buffer)
+ngx_http_vkupload_md5_handler(ngx_shared_file_writer_t *writer, ngx_buf_t *buffer)
 {
     ngx_http_vkupload_md5_ctx_t  *ctx;
     ngx_shared_file_t            *file = writer->file;
     u_char                        digest[NGX_HTTP_VKUPLOAD_MD5_DIGEST_LENGTH];
 
-    ssize_t                       n;
-    size_t                        size;
-    u_char                        content_buffer[4096];
-
-    ctx = ngx_shared_file_plugin_ctx(file, plugin);
+    ctx = ngx_shared_file_plugin_ctx(file, &ngx_http_vkupload_md5);
     if (ctx == NULL) {
-        ctx = ngx_slab_calloc(writer->file->manager->pool, sizeof(ngx_http_vkupload_md5_ctx_t));
+        if (file->node->processed_size != 0) {
+            return NGX_ERROR;
+        }
 
+        ctx = ngx_slab_calloc(file->manager->pool, sizeof(ngx_http_vkupload_md5_ctx_t));
         if (ctx == NULL) {
             return NGX_ERROR;
         }
 
-        ngx_shared_file_plugin_set_ctx(file, plugin, ctx);
+        ngx_shared_file_plugin_set_ctx(file, &ngx_http_vkupload_md5, ctx);
         ngx_md5_init(&ctx->md5);
     }
 
-    if (ngx_buf_in_memory(buffer)) {
-        ngx_md5_update(&ctx->md5, buffer->pos, ngx_buf_size(buffer));
-    } else {
-        while (1) {
-            size = ngx_buf_size(buffer);
-            if (size == 0) {
-                break;
-            }
-
-            if (size > (size_t) sizeof(content_buffer)) {
-                size = (size_t) sizeof(content_buffer);
-            }
-
-            n = ngx_read_file(buffer->file, content_buffer, size, buffer->file_pos);
-
-            if (n == NGX_ERROR || n == 0) {
-                return NGX_ERROR;
-            }
-
-            ngx_md5_update(&ctx->md5, content_buffer, n);
-            buffer->file_pos += n;
-        }
+    if (!ngx_buf_in_memory(buffer)) {
+        return NGX_ERROR;
     }
+
+    ngx_md5_update(&ctx->md5, buffer->pos, ngx_buf_size(buffer));
 
     if (ngx_shared_file_is_full(file)) {
         ngx_md5_final(digest, &ctx->md5);
         ngx_hex_dump(ctx->md5_str, digest, NGX_HTTP_VKUPLOAD_MD5_DIGEST_LENGTH_STR);
+
+        ctx->complete = 1;
     }
 
     return NGX_OK;
@@ -120,7 +102,7 @@ ngx_http_vkupload_md5_variable(ngx_http_request_t *request, ngx_http_variable_va
     }
 
     ctx = ngx_shared_file_plugin_ctx(vkupload->file, &ngx_http_vkupload_md5);
-    if (ctx == NULL || ctx->md5_str[0] == '\0') {
+    if (ctx == NULL || ctx->complete == 0) {
         v->not_found = 1;
         return NGX_OK;
     }

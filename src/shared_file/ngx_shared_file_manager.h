@@ -27,6 +27,7 @@ struct ngx_shared_file_manager_s {
 
     ngx_shared_file_plugin_t           *plugins[NGX_SHARED_FILE_PLUGINS_MAX];
     ngx_int_t                           plugins_count;
+    ngx_int_t                           plugins_need_in_memory;
 };
 
 ngx_int_t
