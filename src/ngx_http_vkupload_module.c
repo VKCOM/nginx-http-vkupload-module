@@ -97,8 +97,8 @@ static ngx_command_t ngx_http_vkupload_commands[] = {
 };
 
 static ngx_http_module_t ngx_http_vkupload_module_ctx = {
-    NULL,                                   /* preconfiguration */
-    ngx_http_vkupload_init,                 /* postconfiguration */
+    ngx_http_vkupload_init,                 /* preconfiguration */
+    NULL,                                   /* postconfiguration */
 
     ngx_http_vkupload_create_main_conf,     /* create main configuration */
     NULL,                                   /* init main configuration */
@@ -270,7 +270,7 @@ ngx_http_vkupload_manager_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     u_char                      *last, *p, chmod[5];
     ssize_t                      size;
-    ngx_str_t                    s, name, *value;
+    ngx_str_t                    s, name, plugin_name, *value;
     ngx_uint_t                   i, n, access;
     ngx_array_t                 *managers;
     ngx_shared_file_manager_t   *manager, **manager_ptr;
@@ -411,16 +411,16 @@ ngx_http_vkupload_manager_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
                 p = (u_char *) ngx_strchr(s.data, ',');
 
                 if (p == NULL) {
-                    name.data = s.data;
-                    name.len = value[i].data + value[i].len - s.data;
+                    plugin_name.data = s.data;
+                    plugin_name.len = value[i].data + value[i].len - s.data;
                 } else {
-                    name.data = s.data;
-                    name.len = p - s.data;
+                    plugin_name.data = s.data;
+                    plugin_name.len = p - s.data;
 
                     ++p;
                 }
 
-                plugin = ngx_shared_file_plugin_find(&name);
+                plugin = ngx_shared_file_plugin_find(&plugin_name);
 
                 if (plugin == NULL) {
                     return "error";
@@ -428,7 +428,7 @@ ngx_http_vkupload_manager_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
                 if (ngx_shared_file_plugin_manager_register(manager, plugin) != NGX_OK) {
                     ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                                   "error register \"%V\" plugin", &name);
+                                   "error register \"%V\" plugin", &plugin_name);
 
                     return NGX_CONF_ERROR;
                 }
