@@ -12,6 +12,8 @@
 #include "handler/ngx_http_vkupload_multipart.h"
 #include "handler/ngx_http_vkupload_resumable.h"
 
+#include "plugin/ngx_http_vkupload_md5.h"
+
 static ngx_int_t  ngx_http_vkupload_init(ngx_conf_t *cf);
 static void  *ngx_http_vkupload_create_main_conf(ngx_conf_t *cf);
 static void  *ngx_http_vkupload_create_loc_conf(ngx_conf_t *cf);
@@ -135,6 +137,8 @@ ngx_http_vkupload_init(ngx_conf_t *cf)
 
     ngx_http_vkupload_request_handler_register(&ngx_http_vkupload_multipart_handler, cf);
     ngx_http_vkupload_request_handler_register(&ngx_http_vkupload_resumable_handler, cf);
+
+    ngx_shared_file_plugin_register(&ngx_http_vkupload_md5, cf);
 
     return NGX_OK;
 }
