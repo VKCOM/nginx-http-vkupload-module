@@ -132,7 +132,7 @@ ngx_http_vkupload_multipart_handler_finalize(ngx_http_vkupload_request_t *vkuplo
         goto error;
     }
 
-    if (!ngx_shared_file_complete_if_uploaded(vkupload->file)) {
+    if (ngx_shared_file_complete_if_uploaded(vkupload->file) != NGX_OK) {
         goto error;
     }
 
