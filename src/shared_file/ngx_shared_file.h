@@ -26,12 +26,12 @@ struct ngx_shared_file_node_s {
     ngx_atomic_t                lock;
     ngx_atomic_t                uses;
 
-    unsigned                    error:1;
-    unsigned                    timeouted:1;
-    unsigned                    completed:1;
-    unsigned                    processed:1;
-    unsigned                    total_known:1;
-    unsigned                    detached:1;
+    unsigned                    error           :1;
+    unsigned                    timeouted       :1;
+    unsigned                    completed       :1;
+    unsigned                    processed       :1;
+    unsigned                    total_known     :1;
+    unsigned                    detached        :1;
 
     void                       *plugins[];
 };
