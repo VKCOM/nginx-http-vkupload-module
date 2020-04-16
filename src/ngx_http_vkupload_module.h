@@ -7,7 +7,7 @@
 
 #include "shared_file/ngx_shared_file_manager.h"
 
-#define NGX_HTTP_VKUPLOAD_MODULE_VERSION "3.0.0-vk"
+#define NGX_HTTP_VKUPLOAD_MODULE_VERSION "3.1.0-vk"
 
 extern ngx_module_t  ngx_http_vkupload_module;
 
