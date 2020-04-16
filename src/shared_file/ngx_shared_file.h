@@ -6,10 +6,9 @@
 #include <ngx_rbtree.h>
 
 typedef struct ngx_shared_file_manager_s  ngx_shared_file_manager_t;
-typedef struct ngx_shared_file_node_s  ngx_shared_file_node_t;
-typedef struct ngx_shared_file_s  ngx_shared_file_t;
-typedef struct ngx_shared_file_node_plugin_s  ngx_shared_file_node_plugin_t;
-typedef struct ngx_shared_file_writer_s  ngx_shared_file_writer_t;
+typedef struct ngx_shared_file_node_s     ngx_shared_file_node_t;
+typedef struct ngx_shared_file_s          ngx_shared_file_t;
+typedef struct ngx_shared_file_writer_s   ngx_shared_file_writer_t;
 
 struct ngx_shared_file_node_s {
     ngx_str_node_t              id;
@@ -46,20 +45,37 @@ struct ngx_shared_file_s {
     ngx_pool_cleanup_t         *cleanup;
 };
 
-void       ngx_shared_file_node_lock(ngx_shared_file_node_t *node);
-void       ngx_shared_file_node_unlock(ngx_shared_file_node_t *node);
+void
+ngx_shared_file_node_lock(ngx_shared_file_node_t *node);
 
-void       ngx_shared_file_node_incref(ngx_shared_file_manager_t *manager, ngx_shared_file_node_t *node); // required shm lock
-void       ngx_shared_file_node_decref(ngx_shared_file_manager_t *manager, ngx_shared_file_node_t *node); // required shm lock
+void
+ngx_shared_file_node_unlock(ngx_shared_file_node_t *node);
 
-ngx_int_t  ngx_shared_file_open(ngx_shared_file_t *file, ngx_str_t *session_id);
-ngx_int_t  ngx_shared_file_find(ngx_shared_file_t *file, ngx_str_t *session_id);
-void       ngx_shared_file_close(ngx_shared_file_t *file);
+void
+ngx_shared_file_node_incref(ngx_shared_file_manager_t *manager, ngx_shared_file_node_t *node); // required shm lock
 
-ngx_int_t  ngx_shared_file_is_uploaded(ngx_shared_file_t *file);
-ngx_int_t  ngx_shared_file_set_total(ngx_shared_file_t *file, size_t total_size, size_t part_offset, size_t part_size);
+void
+ngx_shared_file_node_decref(ngx_shared_file_manager_t *manager, ngx_shared_file_node_t *node); // required shm lock
 
-ngx_int_t  ngx_shared_file_complete_if_uploaded(ngx_shared_file_t *file);
-ngx_int_t  ngx_shared_file_is_full(ngx_shared_file_t *file);
+ngx_int_t
+ngx_shared_file_open(ngx_shared_file_t *file, ngx_str_t *session_id);
+
+ngx_int_t
+ngx_shared_file_find(ngx_shared_file_t *file, ngx_str_t *session_id);
+
+void
+ngx_shared_file_close(ngx_shared_file_t *file);
+
+ngx_int_t
+ngx_shared_file_is_uploaded(ngx_shared_file_t *file);
+
+ngx_int_t
+ngx_shared_file_set_total(ngx_shared_file_t *file, size_t total_size, size_t part_offset, size_t part_size);
+
+ngx_int_t
+ngx_shared_file_complete_if_uploaded(ngx_shared_file_t *file);
+
+ngx_int_t
+ngx_shared_file_is_full(ngx_shared_file_t *file);
 
 #endif /* _NGX_SHARED_FILE_H_INCLUDED_ */
