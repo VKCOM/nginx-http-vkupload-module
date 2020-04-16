@@ -174,6 +174,7 @@ ngx_http_vkupload_create_loc_conf(ngx_conf_t *cf)
      * set by ngx_pcalloc():
      *
      *     conf->upload_url = { NULL, 0 };
+     *.    conf->resumable_session_name = NULL;
      */
 
     conf->manager = NGX_CONF_UNSET_PTR;
@@ -183,7 +184,6 @@ ngx_http_vkupload_create_loc_conf(ngx_conf_t *cf)
     conf->multipart_fields = NGX_CONF_UNSET_PTR;
 
     conf->resumable = NGX_CONF_UNSET;
-    conf->resumable_session_name = NGX_CONF_UNSET_PTR;
 
     return conf;
 }
@@ -202,7 +202,10 @@ ngx_http_vkupload_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
     ngx_conf_merge_ptr_value(conf->multipart_fields, prev->multipart_fields, NULL);
 
     ngx_conf_merge_value(conf->resumable, prev->resumable, 0);
-    ngx_conf_merge_ptr_value(conf->resumable_session_name, prev->resumable_session_name, NULL);
+
+    if (conf->resumable_session_name == NULL) {
+        conf->resumable_session_name = prev->resumable_session_name;
+    }
 
     return NGX_CONF_OK;
 }
