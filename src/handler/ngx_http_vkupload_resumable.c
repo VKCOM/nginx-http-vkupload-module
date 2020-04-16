@@ -63,7 +63,9 @@ ngx_http_vkupload_resumable_handler_init(ngx_http_request_t *request, ngx_http_v
         return NGX_DECLINED;
     }
 
-    content_disposition_header = ngx_http_vkupload_header_find(request, & (ngx_str_t) ngx_string("content-disposition"));
+    content_disposition_header = ngx_http_vkupload_header_find(&request->headers_in.headers,
+        & (ngx_str_t) ngx_string("content-disposition"));
+
     if (content_disposition_header == NULL) {
         return NGX_DECLINED;
     }
@@ -86,7 +88,7 @@ ngx_http_vkupload_resumable_handler_init(ngx_http_request_t *request, ngx_http_v
         return NGX_HTTP_BAD_REQUEST;
     }
 
-    session_id_header = ngx_http_vkupload_header_find(request, & (ngx_str_t) ngx_string("session-id"));
+    session_id_header = ngx_http_vkupload_header_find(&request->headers_in.headers, & (ngx_str_t) ngx_string("session-id"));
     if (session_id_header) {
         rc = ngx_http_vkupload_headerparser_session_id(&session_id, session_id_header);
         if (rc != NGX_OK) {
@@ -96,7 +98,7 @@ ngx_http_vkupload_resumable_handler_init(ngx_http_request_t *request, ngx_http_v
         // TODO: complex value
     }
 
-    content_range_header = ngx_http_vkupload_header_find(request, & (ngx_str_t) ngx_string("content-range"));
+    content_range_header = ngx_http_vkupload_header_find(&request->headers_in.headers, & (ngx_str_t) ngx_string("content-range"));
     if (content_range_header) {
         rc = ngx_http_vkupload_headerparser_content_range(&range, content_range_header);
         if (rc != NGX_OK) {

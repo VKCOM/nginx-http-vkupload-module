@@ -141,6 +141,37 @@ retry:
     return NGX_OK;
 }
 
+ngx_str_t *
+ngx_http_vkupload_header_find(ngx_list_t *headers_list, const ngx_str_t *name)
+{
+    ngx_list_part_t  *part;
+    ngx_table_elt_t  *h;
+    ngx_uint_t        i;
+
+    part = &headers_list->part;
+    h = part->elts;
+
+    for (i = 0; /* void */ ; i++) {
+        if (i >= part->nelts) {
+            if (part->next == NULL) {
+                break;
+            }
+
+            part = part->next;
+            h = part->elts;
+            i = 0;
+        }
+
+        if (name->len != h[i].key.len || ngx_strcasecmp(name->data, h[i].key.data) != 0) {
+            continue;
+        }
+
+        return &(h[i].value);
+    }
+
+    return NULL;
+}
+
 ngx_int_t
 ngx_http_vkupload_buf_append_kvalue(ngx_chain_t **bufs_ptr, ngx_pool_t *pool, const ngx_str_t *name, const ngx_str_t *value)
 {
@@ -199,33 +230,3 @@ ngx_http_vkupload_buf_append_kvalue(ngx_chain_t **bufs_ptr, ngx_pool_t *pool, co
     return NGX_OK;
 }
 
-ngx_str_t *
-ngx_http_vkupload_header_find(ngx_http_request_t *request, const ngx_str_t *name)
-{
-    ngx_list_part_t  *part;
-    ngx_table_elt_t  *h;
-    ngx_uint_t        i;
-
-    part = &request->headers_in.headers.part;
-    h = part->elts;
-
-    for (i = 0; /* void */ ; i++) {
-        if (i >= part->nelts) {
-            if (part->next == NULL) {
-                break;
-            }
-
-            part = part->next;
-            h = part->elts;
-            i = 0;
-        }
-
-        if (name->len != h[i].key.len || ngx_strcasecmp(name->data, h[i].key.data) != 0) {
-            continue;
-        }
-
-        return &(h[i].value);
-    }
-
-    return NULL;
-}
