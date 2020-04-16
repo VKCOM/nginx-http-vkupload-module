@@ -11,7 +11,7 @@ typedef struct {
     size_t                      size;
     size_t                      pos;
 
-    unsigned                    completed:1;
+    unsigned                    completed   :1;
 } ngx_shared_file_part_t;
 
 
