@@ -34,7 +34,7 @@ struct ngx_shared_file_manager_s {
 ngx_int_t  ngx_shared_file_manager_init(ngx_shared_file_manager_t *manager, ngx_shm_zone_t *zone);
 ngx_int_t  ngx_shared_file_manager_copy(ngx_shared_file_manager_t *manager, ngx_shared_file_manager_t *manager_old);
 
-ngx_msec_t ngx_http_vkupload_manager_handler(void *data); // rename
+ngx_msec_t ngx_shared_file_manager_handler(void *data);
 
 
 #endif /* _NGX_SHARED_FILE_MANAGER_H_INCLUDED_ */

@@ -446,7 +446,7 @@ ngx_http_vkupload_manager_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return NGX_CONF_ERROR;
     }
 
-    path->manager = ngx_http_vkupload_manager_handler;
+    path->manager = ngx_shared_file_manager_handler;
     path->data = manager;
     path->conf_file = cf->conf_file->file.name.data;
     path->line = cf->conf_file->line;

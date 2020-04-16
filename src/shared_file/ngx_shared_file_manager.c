@@ -42,7 +42,7 @@ ngx_shared_file_manager_copy(ngx_shared_file_manager_t *manager, ngx_shared_file
 }
 
 ngx_msec_t
-ngx_http_vkupload_manager_handler(void *data)
+ngx_shared_file_manager_handler(void *data)
 {
     ngx_shared_file_manager_t  *manager = data;
     ngx_shared_file_node_t     *node;
