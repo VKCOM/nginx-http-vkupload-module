@@ -82,16 +82,11 @@ ngx_shared_file_plugin_manager_index(ngx_shared_file_manager_t *manager, ngx_sha
 }
 
 void *
-ngx_shared_file_plugin_ctx(ngx_shared_file_t *file, ngx_shared_file_plugin_t *plugin)
+ngx_shared_file_node_plugin_ctx(ngx_shared_file_manager_t *manager, ngx_shared_file_node_t *node, ngx_shared_file_plugin_t *plugin)
 {
-    ngx_shared_file_node_t  *node = file->node;
     ngx_int_t                index;
 
-    if (node == NULL) {
-        return NULL;
-    }
-
-    index = ngx_shared_file_plugin_manager_index(file->manager, plugin);
+    index = ngx_shared_file_plugin_manager_index(manager, plugin);
     if (index == NGX_ERROR) {
         return NULL;
     }
@@ -100,16 +95,12 @@ ngx_shared_file_plugin_ctx(ngx_shared_file_t *file, ngx_shared_file_plugin_t *pl
 }
 
 ngx_int_t
-ngx_shared_file_plugin_set_ctx(ngx_shared_file_t *file, ngx_shared_file_plugin_t *plugin, void *ctx)
+ngx_shared_file_node_plugin_set_ctx(ngx_shared_file_manager_t *manager, ngx_shared_file_node_t *node,
+    ngx_shared_file_plugin_t *plugin, void *ctx)
 {
-    ngx_shared_file_node_t  *node = file->node;
     ngx_int_t                index;
 
-    if (node == NULL) {
-        return NGX_ERROR;
-    }
-
-    index = ngx_shared_file_plugin_manager_index(file->manager, plugin);
+    index = ngx_shared_file_plugin_manager_index(manager, plugin);
     if (index == NGX_ERROR) {
         return NGX_ERROR;
     }
@@ -119,7 +110,7 @@ ngx_shared_file_plugin_set_ctx(ngx_shared_file_t *file, ngx_shared_file_plugin_t
 }
 
 ngx_int_t
-ngx_shared_file_plugins_run(ngx_shared_file_writer_t *writer, ngx_buf_t *buffer)
+ngx_shared_file_plugins_call_handler(ngx_shared_file_writer_t *writer, ngx_buf_t *buffer)
 {
     ngx_shared_file_manager_t  *manager = writer->file->manager;
     ngx_shared_file_node_t     *node = writer->file->node;
@@ -132,6 +123,37 @@ ngx_shared_file_plugins_run(ngx_shared_file_writer_t *writer, ngx_buf_t *buffer)
             ngx_log_error(NGX_LOG_WARN, writer->stream.log, 0,
                 "%s: error call %V plugins for %V (%d)", __FUNCTION__, &manager->plugins[i]->name, &node->id.str, rc);
         }
+    }
+
+    return NGX_OK;
+}
+
+ngx_int_t
+ngx_shared_file_plugins_call_complete(ngx_shared_file_t *file)
+{
+    ngx_shared_file_manager_t  *manager = file->manager;
+    ngx_shared_file_node_t     *node = file->node;
+    ngx_int_t                   i, rc;
+
+    for (i = 0; i < manager->plugins_count; i++) {
+        rc = manager->plugins[i]->complete(file);
+
+        if (rc != NGX_OK) {
+            ngx_log_error(NGX_LOG_WARN, file->log, 0,
+                "%s: error call %V plugins for %V (%d)", __FUNCTION__, &manager->plugins[i]->name, &node->id.str, rc);
+        }
+    }
+
+    return NGX_OK;
+}
+
+ngx_int_t
+ngx_shared_file_plugins_call_finalize(ngx_shared_file_manager_t *manager, ngx_shared_file_node_t *node)
+{
+    ngx_int_t                   i;
+
+    for (i = 0; i < manager->plugins_count; i++) {
+        manager->plugins[i]->finalize(manager, node);
     }
 
     return NGX_OK;

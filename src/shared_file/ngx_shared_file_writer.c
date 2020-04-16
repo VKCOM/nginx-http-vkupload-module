@@ -174,7 +174,7 @@ ngx_shared_file_write(ngx_shared_file_writer_t *writer, u_char *data, size_t len
 
             ngx_shared_file_node_unlock(node);
 
-            rc = ngx_shared_file_plugins_run(writer, &buffer);
+            rc = ngx_shared_file_plugins_call_handler(writer, &buffer);
             if (rc != NGX_OK) {
                 ngx_log_error(NGX_LOG_WARN, writer->stream.log, 0,
                     "%s: error call plugins plugins %V (%d)", __FUNCTION__, &node->id.str, rc);
@@ -229,8 +229,8 @@ ngx_shared_file_writer_close(ngx_shared_file_writer_t *writer)
 
             buffer.in_file = 1;
             buffer.file = &writer->stream;
-            buffer.file_pos = node->linar_size;
-            buffer.file_last = node->linar_size + (node->linar_size - node->processed_size);
+            buffer.file_pos = node->processed_size;
+            buffer.file_last = node->linar_size;
 
             ngx_shared_file_node_unlock(node);
 
@@ -242,7 +242,7 @@ ngx_shared_file_writer_close(ngx_shared_file_writer_t *writer)
                 }
             }
 
-            rc = ngx_shared_file_plugins_run(writer, &buffer);
+            rc = ngx_shared_file_plugins_call_handler(writer, &buffer);
             if (rc != NGX_OK) {
                 ngx_log_error(NGX_LOG_WARN, writer->stream.log, 0,
                     "%s: error call plugins plugins %V (%d)", __FUNCTION__, &node->id.str, rc);

@@ -150,6 +150,8 @@ ngx_shared_file_node_decref(ngx_shared_file_manager_t *manager, ngx_shared_file_
             "%s: %V (c:%d, e:%d, t:%d) - delete node", __FUNCTION__, &node->id.str,
             node->completed, node->error, node->timeouted);
 
+        ngx_shared_file_plugins_call_finalize(manager, node);
+
         if (node->detached == 0 && node->id.node.key) {
             ngx_rbtree_delete(&manager->tree->rbtree, &node->id.node);
             node->id.node.key = 0;
@@ -227,10 +229,12 @@ ngx_shared_file_open(ngx_shared_file_t *file, ngx_str_t *session_id)
     } else {
         node = ngx_shared_file_manager_find_node_locked(manager, session_id);
         if (node == NULL) {
-            ngx_log_debug2(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
-             "%s: %V - create node", __FUNCTION__, &node->id.str);
-
             node = ngx_shared_file_manager_create_node_locked(manager, session_id);
+
+            if (node) {
+                ngx_log_debug2(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
+                    "%s: %V - create node", __FUNCTION__, &node->id.str);
+            }
         } else {
             ngx_log_debug2(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
                 "%s: %V - open node", __FUNCTION__, &node->id.str);
@@ -238,13 +242,13 @@ ngx_shared_file_open(ngx_shared_file_t *file, ngx_str_t *session_id)
     }
 
     if (node) {
-        ngx_shared_file_node_incref(manager, node); // for current request
-
         file->node = node;
         file->cleanup = cln;
 
         cln->handler = ngx_shared_file_cleanup_handler;
         cln->data = file;
+
+        ngx_shared_file_node_incref(manager, node); // for current request
     }
 
     ngx_shmtx_unlock(&manager->pool->mutex);
@@ -406,6 +410,8 @@ ngx_shared_file_complete_if_uploaded(ngx_shared_file_t *file)
 
         ngx_log_debug2(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
             "%s: %V - completed", __FUNCTION__, &node->id.str);
+
+        ngx_shared_file_plugins_call_complete(file);
 
         ngx_shared_file_node_unlock(node);
         return NGX_OK;
