@@ -3,7 +3,6 @@
 #include <ngx_rbtree.h>
 
 #include "shared_file/ngx_shared_file_manager.h"
-#include "shared_file/ngx_shared_file_plugin.h"
 #include "shared_file/ngx_shared_file.h"
 
 #define NGX_SHARED_FILE_NODES_REMOVE_BULK 128
