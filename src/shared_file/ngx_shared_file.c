@@ -59,6 +59,39 @@ ngx_shared_file_manager_create_node_locked(ngx_shared_file_manager_t *manager, n
     return node;
 }
 
+static ngx_shared_file_node_t *
+ngx_shared_file_manager_create_detached_node(ngx_shared_file_manager_t *manager, ngx_pool_t *pool)
+{
+    ngx_shared_file_node_t  *node;
+    ngx_str_t                session_id;
+
+    session_id.data = ngx_pcalloc(pool, sizeof("#ngx_shared_file") + NGX_SIZE_T_LEN + NGX_SIZE_T_LEN);
+    if (session_id.data == NULL) {
+        return NULL;
+    }
+
+    session_id.len = ngx_sprintf(session_id.data, "#ngx_shared_file-%p-%ui", manager, manager->uniq)
+        - session_id.data;
+
+    manager->uniq++;
+
+    node = ngx_pcalloc(pool, sizeof(ngx_shared_file_node_t) + (sizeof(void *) * manager->plugins_count));
+    if (node == NULL) {
+        return NULL;
+    }
+
+    node->id.node.key = 0;
+    node->id.str = session_id;
+
+    ngx_queue_init(&node->parts);
+
+    node->created_at = ngx_time();
+    node->updated_at = node->created_at;
+    node->detached = 1;
+
+    return node;
+}
+
 static void
 ngx_shared_file_cleanup_handler(void *data)
 {
@@ -117,7 +150,7 @@ ngx_shared_file_node_decref(ngx_shared_file_manager_t *manager, ngx_shared_file_
             "%s: %V (c:%d, e:%d, t:%d) - delete node", __FUNCTION__, &node->id.str,
             node->completed, node->error, node->timeouted);
 
-        if (node->id.node.key) {
+        if (node->detached == 0 && node->id.node.key) {
             ngx_rbtree_delete(&manager->tree->rbtree, &node->id.node);
             node->id.node.key = 0;
         }
@@ -125,8 +158,10 @@ ngx_shared_file_node_decref(ngx_shared_file_manager_t *manager, ngx_shared_file_
         while ((part_q = ngx_queue_head(&node->parts)) && part_q != ngx_queue_sentinel(&node->parts)) {
             ngx_queue_remove(part_q);
 
-            part_i = ngx_queue_data(part_q, ngx_shared_file_part_t, queue);
-            ngx_slab_free_locked(manager->pool, part_i);
+            if (node->detached == 0) {
+                part_i = ngx_queue_data(part_q, ngx_shared_file_part_t, queue);
+                ngx_slab_free_locked(manager->pool, part_i);
+            }
         }
 
         if (node->path.len) {
@@ -144,20 +179,26 @@ ngx_shared_file_node_decref(ngx_shared_file_manager_t *manager, ngx_shared_file_
                 }
             }
 
-            ngx_slab_free_locked(manager->pool, node->path.data);
+            if (node->detached == 0) {
+                ngx_slab_free_locked(manager->pool, node->path.data);
+            }
 
             node->path.data = NULL;
             node->path.len = 0;
         }
 
         if (node->id.str.len) {
-            ngx_slab_free_locked(manager->pool, node->id.str.data);
+            if (node->detached == 0) {
+                ngx_slab_free_locked(manager->pool, node->id.str.data);
+            }
 
             node->id.str.data = NULL;
             node->id.str.len = 0;
         }
 
-        ngx_slab_free_locked(manager->pool, node);
+        if (node->detached == 0) {
+            ngx_slab_free_locked(manager->pool, node);
+        }
     }
 }
 
@@ -178,42 +219,21 @@ ngx_shared_file_open(ngx_shared_file_t *file, ngx_str_t *session_id)
     ngx_shmtx_lock(&manager->pool->mutex);
 
     if (session_id == NULL) {
-        session_id = ngx_pcalloc(file->pool, sizeof(ngx_str_t));
-        if (session_id == NULL) {
-            return NGX_ERROR;
+        node = ngx_shared_file_manager_create_detached_node(manager, file->pool);
+        if (node) {
+            ngx_log_debug2(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
+                "%s: %V - create anonymus node", __FUNCTION__, &node->id.str);
         }
-
-        session_id->data = ngx_pcalloc(file->pool, sizeof("#ngx_shared_file") + NGX_SIZE_T_LEN + NGX_SIZE_T_LEN);
-        if (session_id->data == NULL) {
-            return NGX_ERROR;
-        }
-
-        session_id->len = ngx_sprintf(session_id->data, "#ngx_shared_file-%p-%ui", manager, manager->uniq)
-            - session_id->data;
-
-        manager->uniq++;
-
-        ngx_log_debug2(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
-            "%s: %V - create anonymus node", __FUNCTION__, session_id);
-
-        node = ngx_shared_file_manager_find_node_locked(manager, session_id);
-        if (node != NULL) {
-            return NGX_ERROR;
-        }
-
-        node = ngx_shared_file_manager_create_node_locked(manager, session_id);
     } else {
         node = ngx_shared_file_manager_find_node_locked(manager, session_id);
         if (node == NULL) {
             ngx_log_debug2(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
-             "%s: %V - create node", __FUNCTION__, session_id);
+             "%s: %V - create node", __FUNCTION__, &node->id.str);
 
             node = ngx_shared_file_manager_create_node_locked(manager, session_id);
         } else {
             ngx_log_debug2(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
-                "%s: %V - open node", __FUNCTION__, session_id);
-
-            // foreach node plugins, find in plugins, connect
+                "%s: %V - open node", __FUNCTION__, &node->id.str);
         }
     }
 
@@ -230,8 +250,13 @@ ngx_shared_file_open(ngx_shared_file_t *file, ngx_str_t *session_id)
     ngx_shmtx_unlock(&manager->pool->mutex);
 
     if (node == NULL) {
-        ngx_log_error(NGX_LOG_ERR, file->log, ngx_errno,
-            "%s: error allocate new shared file session for %V", __FUNCTION__, session_id);
+        if (session_id) {
+            ngx_log_error(NGX_LOG_ERR, file->log, ngx_errno,
+                "%s: error allocate new shared file session for %V", __FUNCTION__, session_id);
+        } else {
+            ngx_log_error(NGX_LOG_ERR, file->log, ngx_errno,
+                "%s: error allocate new anonyus file session for %V", __FUNCTION__);
+        }
 
         return NGX_ERROR;
     }
@@ -264,6 +289,9 @@ ngx_shared_file_find(ngx_shared_file_t *file, ngx_str_t *session_id)
 
         cln->handler = ngx_shared_file_cleanup_handler;
         cln->data = file;
+
+        ngx_log_debug2(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
+            "%s: %V - find node", __FUNCTION__, session_id);
     }
 
     ngx_shmtx_unlock(&manager->pool->mutex);
@@ -358,7 +386,6 @@ ngx_shared_file_is_full(ngx_shared_file_t *file)
     ngx_shared_file_node_unlock(node);
     return full;
 }
-
 
 ngx_int_t
 ngx_shared_file_complete_if_uploaded(ngx_shared_file_t *file)

@@ -32,6 +32,7 @@ struct ngx_shared_file_node_s {
     unsigned                    completed:1;
     unsigned                    processed:1;
     unsigned                    total_known:1;
+    unsigned                    detached:1;
 
     void                       *plugins[];
 };
