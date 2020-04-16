@@ -26,7 +26,6 @@ typedef struct {
     ngx_http_vkupload_multipartparser_t             parser;
     ngx_http_vkupload_multipartparser_callbacks_t   callbacks;
 
-    ngx_shared_file_t                              *file;
     ngx_shared_file_writer_t                       *writer;
 
     size_t                                          size;
@@ -126,18 +125,18 @@ ngx_http_vkupload_multipart_handler_finalize(ngx_http_vkupload_request_t *vkuplo
         goto error;
     }
 
-    if (multipart->file == NULL || multipart->size == 0) {
+    if (vkupload->file == NULL || multipart->size == 0) {
         ngx_log_error(NGX_LOG_WARN, request->connection->log, 0,
                 "%s: empty field data", __FUNCTION__);
 
         goto error;
     }
 
-    if (!ngx_shared_file_complete_if_uploaded(multipart->file)) {
+    if (!ngx_shared_file_complete_if_uploaded(vkupload->file)) {
         goto error;
     }
 
-    vkupload->variables.path = multipart->file->node->path;
+    vkupload->variables.path = vkupload->file->node->path;
     vkupload->variables.name = multipart->filename;
     vkupload->variables.size = multipart->size;
 
@@ -149,11 +148,11 @@ error:
         multipart->writer = NULL;
     }
 
-    if (multipart->file && multipart->file->node) {
-        multipart->file->node->error = 1;
+    if (vkupload->file && vkupload->file->node) {
+        vkupload->file->node->error = 1;
 
-        ngx_shared_file_close(multipart->file);
-        multipart->file = NULL;
+        ngx_shared_file_close(vkupload->file);
+        vkupload->file = NULL;
     }
 
 
@@ -258,16 +257,16 @@ ngx_http_vkupload_multipart_parser_header_handler(ngx_http_vkupload_multipartpar
         multipart->callbacks.on_part_end = ngx_http_vkupload_multipart_parser_finish_handler;
         multipart->callbacks.on_data = ngx_http_vkupload_multipart_parser_data_handler;
 
-        multipart->file = ngx_pcalloc(request->pool, sizeof(ngx_shared_file_t));
-        if (multipart->file == NULL) {
+        vkupload->file = ngx_pcalloc(request->pool, sizeof(ngx_shared_file_t));
+        if (vkupload->file == NULL) {
             return NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
 
-        multipart->file->pool = request->pool;
-        multipart->file->log = request->connection->log;
-        multipart->file->manager = vkupload_lconf->manager;
+        vkupload->file->pool = request->pool;
+        vkupload->file->log = request->connection->log;
+        vkupload->file->manager = vkupload_lconf->manager;
 
-        rc = ngx_shared_file_open(multipart->file, NULL);
+        rc = ngx_shared_file_open(vkupload->file, NULL);
         if (rc != NGX_OK) {
             return rc;
         }
@@ -277,7 +276,7 @@ ngx_http_vkupload_multipart_parser_header_handler(ngx_http_vkupload_multipartpar
             return NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
 
-        multipart->writer->file = multipart->file;
+        multipart->writer->file = vkupload->file;
 
         rc = ngx_shared_file_writer_open(multipart->writer, 0, NGX_MAX_SIZE_T_VALUE);
         if (rc != NGX_OK) {
@@ -325,7 +324,7 @@ ngx_http_vkupload_multipart_parser_finish_handler(ngx_http_vkupload_multipartpar
     multipart->callbacks.on_data = NULL;
     multipart->callbacks.on_part_end = NULL;
 
-    rc = ngx_shared_file_set_total(multipart->file, multipart->size, 0, multipart->size);
+    rc = ngx_shared_file_set_total(vkupload->file, multipart->size, 0, multipart->size);
     if (rc != NGX_OK) {
         return rc;
     }

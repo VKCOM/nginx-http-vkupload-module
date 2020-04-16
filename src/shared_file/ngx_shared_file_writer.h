@@ -14,6 +14,8 @@ struct ngx_shared_file_writer_s {
 
     ngx_shared_file_part_t            *part;
     ngx_file_t                         stream;
+
+    ngx_buf_t                         *buffer;
 };
 
 ngx_int_t  ngx_shared_file_writer_open(ngx_shared_file_writer_t *writer, size_t offset, size_t size);

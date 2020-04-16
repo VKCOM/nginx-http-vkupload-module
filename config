@@ -9,10 +9,13 @@ ngx_module_srcs="
     $ngx_addon_dir/src/parser/ngx_http_vkupload_multipartparser.c \
     $ngx_addon_dir/src/shared_file/ngx_shared_file.c \
     $ngx_addon_dir/src/shared_file/ngx_shared_file_manager.c \
+    $ngx_addon_dir/src/shared_file/ngx_shared_file_plugin.c \
     $ngx_addon_dir/src/shared_file/ngx_shared_file_writer.c \
     $ngx_addon_dir/src/shared_file/ngx_shared_file_part.c \
     $ngx_addon_dir/src/handler/ngx_http_vkupload_multipart.c \
-    $ngx_addon_dir/src/handler/ngx_http_vkupload_resumable.c"
+    $ngx_addon_dir/src/handler/ngx_http_vkupload_resumable.c \
+    $ngx_addon_dir/src/plugin/ngx_http_vkupload_md5.c \
+"
 
 ngx_module_incs="$ngx_addon_dir/src/"
 

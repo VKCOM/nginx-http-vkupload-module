@@ -3,6 +3,7 @@
 #include <ngx_rbtree.h>
 
 #include "shared_file/ngx_shared_file_manager.h"
+#include "shared_file/ngx_shared_file_plugin.h"
 #include "shared_file/ngx_shared_file.h"
 
 #define NGX_HTTP_VKUPLOAD_NODES_REMOVE_BULK 128
@@ -26,7 +27,6 @@ ngx_shared_file_manager_init(ngx_shared_file_manager_t *manager, ngx_shm_zone_t 
 
     manager->pool->data = manager->tree;
     ngx_rbtree_init(&manager->tree->rbtree, &manager->tree->sentinel, ngx_str_rbtree_insert_value);
-    ngx_queue_init(&manager->plugins);
 
     return NGX_OK;
 }

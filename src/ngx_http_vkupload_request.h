@@ -4,6 +4,8 @@
 #include <ngx_core.h>
 #include <ngx_http.h>
 
+#include "shared_file/ngx_shared_file.h"
+
 typedef struct ngx_http_vkupload_request_s  ngx_http_vkupload_request_t;
 typedef struct ngx_http_vkupload_handler_s  ngx_http_vkupload_handler_t;
 
@@ -22,6 +24,8 @@ struct ngx_http_vkupload_handler_s {
 struct ngx_http_vkupload_request_s {
     ngx_http_request_t                    *request;
     ngx_http_vkupload_handler_t           *handler;
+
+    ngx_shared_file_t                     *file;
 
     struct {
         ngx_str_t                          path;

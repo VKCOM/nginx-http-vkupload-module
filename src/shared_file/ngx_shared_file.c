@@ -34,7 +34,7 @@ ngx_shared_file_manager_create_node_locked(ngx_shared_file_manager_t *manager, n
 {
     ngx_shared_file_node_t  *node;
 
-    node = ngx_slab_calloc_locked(manager->pool, sizeof(ngx_shared_file_node_t));
+    node = ngx_slab_calloc_locked(manager->pool, sizeof(ngx_shared_file_node_t) + (sizeof(void *) * manager->plugins_count));
     if (node == NULL) {
         return NULL;
     }
@@ -342,6 +342,23 @@ ngx_shared_file_set_total(ngx_shared_file_t *file, size_t total_size, size_t par
     ngx_shared_file_node_unlock(node);
     return NGX_OK;
 }
+
+ngx_int_t
+ngx_shared_file_is_full(ngx_shared_file_t *file)
+{
+    ngx_shared_file_node_t  *node = file->node;
+    ngx_int_t                full = 0;
+
+    ngx_shared_file_node_lock(node);
+
+    if (node->total_known && node->linar_size == node->total_size) {
+        full = 1;
+    }
+
+    ngx_shared_file_node_unlock(node);
+    return full;
+}
+
 
 ngx_int_t
 ngx_shared_file_complete_if_uploaded(ngx_shared_file_t *file)

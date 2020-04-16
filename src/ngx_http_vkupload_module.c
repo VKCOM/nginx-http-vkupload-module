@@ -7,6 +7,7 @@
 #include "ngx_http_vkupload_fields.h"
 
 #include "shared_file/ngx_shared_file_manager.h"
+#include "shared_file/ngx_shared_file_plugin.h"
 
 #include "handler/ngx_http_vkupload_multipart.h"
 #include "handler/ngx_http_vkupload_resumable.h"
@@ -266,6 +267,7 @@ ngx_http_vkupload_manager_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ngx_uint_t                   i, n, access;
     ngx_array_t                 *managers;
     ngx_shared_file_manager_t   *manager, **manager_ptr;
+    ngx_shared_file_plugin_t    *plugin;
     ngx_path_t                  *path;
     ngx_shm_zone_t              *zone;
 
@@ -388,6 +390,45 @@ ngx_http_vkupload_manager_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
                 ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                                    "keys zone \"%V\" is too small", &value[i]);
                 return NGX_CONF_ERROR;
+            }
+
+            continue;
+        }
+
+        if (ngx_strncmp(value[i].data, "plugins=", 8) == 0) {
+
+            s.data = value[i].data + 8;
+            s.len = value[i].data + value[i].len - s.data;
+
+            for ( ; ; ) {
+                p = (u_char *) ngx_strchr(s.data, ',');
+
+                if (p == NULL) {
+                    name.data = s.data;
+                    name.len = value[i].data + value[i].len - s.data;
+                } else {
+                    name.data = s.data;
+                    name.len = p - s.data;
+
+                    ++p;
+                }
+
+                plugin = ngx_shared_file_plugin_find(&name);
+
+                if (plugin == NULL) {
+                    return "error";
+                }
+
+                if (ngx_shared_file_plugin_manager_register(manager, plugin) != NGX_OK) {
+                    ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                                   "error register \"%V\" plugin", &name);
+
+                    return NGX_CONF_ERROR;
+                }
+
+                if (p == NULL) {
+                    break;
+                }
             }
 
             continue;

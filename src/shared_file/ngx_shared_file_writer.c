@@ -7,6 +7,8 @@
 #include "shared_file/ngx_shared_file_writer.h"
 #include "shared_file/ngx_shared_file_manager.h"
 
+static ngx_int_t  ngx_shared_file_writer_run_plugins(ngx_shared_file_writer_t *writer);
+
 ngx_int_t
 ngx_shared_file_writer_open(ngx_shared_file_writer_t *writer, size_t offset, size_t size)
 {
@@ -105,14 +107,11 @@ ngx_shared_file_write(ngx_shared_file_writer_t *writer, u_char *data, size_t len
     ngx_shared_file_part_t     *part = writer->part;
     ngx_shared_file_node_t     *node = writer->file->node;
     ngx_file_t                 *stream = &writer->stream;
-    ngx_shared_file_manager_t  *manager = writer->file->manager;
-    ngx_queue_t                *plugin_q;
-    ngx_shared_file_plugin_t   *plugin;
     ngx_buf_t                   buffer;
     ngx_int_t                   rc;
 
-    size_t                   linar_size;
-    size_t                   skip = 0;
+    size_t                      linar_size;
+    size_t                      skip = 0;
 
     if (part->pos + len > (part->offset + part->size)) {
         ngx_log_error(NGX_LOG_WARN, stream->log, 0,
@@ -174,15 +173,9 @@ ngx_shared_file_write(ngx_shared_file_writer_t *writer, u_char *data, size_t len
 
             ngx_shared_file_node_unlock(node);
 
-            for (plugin_q = ngx_queue_head(&manager->plugins); plugin_q != ngx_queue_sentinel(&manager->plugins);
-                plugin_q = ngx_queue_next(plugin_q))
-            {
-                plugin = ngx_queue_data(plugin_q, ngx_shared_file_plugin_t, queue);
-
-                rc = plugin->handler(writer, plugin, &buffer, plugin->ctx);
-                if (rc != NGX_OK) {
-                    return rc;
-                }
+            rc = ngx_shared_file_plugins_run(writer, &buffer);
+            if (rc != NGX_OK) {
+                return rc;
             }
 
             ngx_shared_file_node_lock(node);
@@ -224,15 +217,14 @@ ngx_shared_file_writer_close(ngx_shared_file_writer_t *writer)
 
     ngx_shared_file_node_unlock(node);
     writer->part = NULL;
+
+    ngx_shared_file_writer_run_plugins(writer);
 }
 
-ngx_int_t
-ngx_shared_file_writer_call_plugin(ngx_shared_file_writer_t *writer)
+static ngx_int_t
+ngx_shared_file_writer_run_plugins(ngx_shared_file_writer_t *writer)
 {
     ngx_shared_file_node_t     *node = writer->file->node;
-    ngx_shared_file_manager_t  *manager = writer->file->manager;
-    ngx_queue_t                *plugin_q;
-    ngx_shared_file_plugin_t   *plugin;
     ngx_buf_t                   buffer;
     ngx_int_t                   rc;
 
@@ -255,15 +247,11 @@ ngx_shared_file_writer_call_plugin(ngx_shared_file_writer_t *writer)
 
         ngx_shared_file_node_unlock(node);
 
-        for (plugin_q = ngx_queue_head(&manager->plugins); plugin_q != ngx_queue_sentinel(&manager->plugins);
-            plugin_q = ngx_queue_next(plugin_q))
-        {
-            plugin = ngx_queue_data(plugin_q, ngx_shared_file_plugin_t, queue);
+        // todo: optimization need_memory flag
 
-            rc = plugin->handler(writer, plugin, &buffer, plugin->ctx);
-            if (rc != NGX_OK) {
-                return rc;
-            }
+        rc = ngx_shared_file_plugins_run(writer, &buffer);
+        if (rc != NGX_OK) {
+            return rc;
         }
 
         ngx_shared_file_node_lock(node);

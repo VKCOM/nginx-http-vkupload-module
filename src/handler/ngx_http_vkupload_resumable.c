@@ -17,7 +17,6 @@ static ngx_int_t  ngx_http_vkupload_resumable_handler_finalize(ngx_http_vkupload
 static ngx_int_t  ngx_http_vkupload_resumable_handler_data(ngx_http_vkupload_request_t *vkupload, ngx_chain_t *in);
 
 typedef struct {
-    ngx_shared_file_t         *file;
     ngx_shared_file_writer_t  *writer;
 
     ngx_str_t                  filename;
@@ -139,21 +138,21 @@ ngx_http_vkupload_resumable_handler_init(ngx_http_request_t *request, ngx_http_v
     resumable->filename = filename;
     resumable->fieldname = fieldname;
 
-    resumable->file = ngx_pcalloc(request->pool, sizeof(ngx_shared_file_t));
-    if (resumable->file == NULL) {
+    vkupload->file = ngx_pcalloc(request->pool, sizeof(ngx_shared_file_t));
+    if (vkupload->file == NULL) {
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
 
-    resumable->file->pool = request->pool;
-    resumable->file->log = request->connection->log;
-    resumable->file->manager = vkupload_lconf->manager;
+    vkupload->file->pool = request->pool;
+    vkupload->file->log = request->connection->log;
+    vkupload->file->manager = vkupload_lconf->manager;
 
-    rc = ngx_shared_file_open(resumable->file, session_id.len ? &session_id : NULL);
+    rc = ngx_shared_file_open(vkupload->file, session_id.len ? &session_id : NULL);
     if (rc != NGX_OK) {
         return rc;
     }
 
-    rc = ngx_shared_file_set_total(resumable->file, range.total, range.start, (range.end - range.start + 1));
+    rc = ngx_shared_file_set_total(vkupload->file, range.total, range.start, (range.end - range.start + 1));
     if (rc != NGX_OK) {
         return NGX_HTTP_BAD_REQUEST;
     }
@@ -163,7 +162,7 @@ ngx_http_vkupload_resumable_handler_init(ngx_http_request_t *request, ngx_http_v
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
 
-    resumable->writer->file = resumable->file;
+    resumable->writer->file = vkupload->file;
 
     rc = ngx_shared_file_writer_open(resumable->writer, range.start, (range.end - range.start + 1));
     if (rc != NGX_OK) {
@@ -194,9 +193,9 @@ ngx_http_vkupload_resumable_handler_finalize(ngx_http_vkupload_request_t *vkuplo
         return rc;
     }
 
-    if (ngx_shared_file_complete_if_uploaded(resumable->file) != NGX_OK) {
-        rc = ngx_shared_file_parts_to_string(request->pool, &partial_response, &resumable->file->node->parts,
-            resumable->file->node->linar_size, resumable->file->node->total_size, resumable->file->node->total_known);
+    if (ngx_shared_file_complete_if_uploaded(vkupload->file) != NGX_OK) {
+        rc = ngx_shared_file_parts_to_string(request->pool, &partial_response, &vkupload->file->node->parts,
+            vkupload->file->node->linar_size, vkupload->file->node->total_size, vkupload->file->node->total_known);
         if (rc != NGX_OK) {
             return NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
@@ -235,9 +234,9 @@ ngx_http_vkupload_resumable_handler_finalize(ngx_http_vkupload_request_t *vkuplo
         return ngx_http_output_filter(request, &out);
     }
 
-    vkupload->variables.path = resumable->file->node->path;
+    vkupload->variables.path = vkupload->file->node->path;
     vkupload->variables.name = resumable->filename;
-    vkupload->variables.size = resumable->file->node->total_size;
+    vkupload->variables.size = vkupload->file->node->total_size;
 
     rc = ngx_http_vkupload_header_remove(&request->headers_in.headers, & (ngx_str_t) ngx_string("content-disposition"));
     if (rc != NGX_OK) {
