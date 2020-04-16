@@ -19,6 +19,7 @@ ngx_http_vkupload_request_pass(ngx_http_vkupload_request_t *vkupload)
 
     ngx_http_vkupload_loc_conf_t  *vkupload_lconf;
     ngx_http_request_t            *request;
+    ngx_http_headers_in_t         *headers_in;
     ngx_table_elt_t               *header;
     ngx_str_t                      upload_url;
     ngx_http_request_body_t       *rb;
@@ -26,37 +27,38 @@ ngx_http_vkupload_request_pass(ngx_http_vkupload_request_t *vkupload)
     ngx_int_t                      rc;
 
     request = vkupload->request;
+    headers_in = &request->headers_in;
 
     vkupload_lconf = ngx_http_get_module_loc_conf(request, ngx_http_vkupload_module);
     upload_url = vkupload_lconf->upload_url;
 
     { // update buffer for Content-Length
-        request->headers_in.content_length->value.len = 0;
-        request->headers_in.content_length->value.data = ngx_palloc(request->pool, NGX_OFF_T_LEN);
-        if (request->headers_in.content_length->value.data == NULL) {
+        headers_in->content_length->value.len = 0;
+        headers_in->content_length->value.data = ngx_palloc(request->pool, NGX_OFF_T_LEN);
+        if (headers_in->content_length->value.data == NULL) {
             return NGX_ERROR;
         }
     }
 
     { // update Content-Type
-        if (request->headers_in.content_type == NULL) {
-            request->headers_in.content_type = ngx_list_push(&request->headers_in.headers);
-            request->headers_in.content_type->key = content_type_header_name;
-            request->headers_in.content_type->hash = 1;
+        if (headers_in->content_type == NULL) {
+            headers_in->content_type = ngx_list_push(&request->headers_in.headers);
+            headers_in->content_type->key = content_type_header_name;
+            headers_in->content_type->hash = 1;
         }
 
-        request->headers_in.content_type->value.len = urlencoded_content_type_value.len;
-        request->headers_in.content_type->value.data = ngx_palloc(request->pool, urlencoded_content_type_value.len);
-        if (request->headers_in.content_type->value.data == NULL) {
+        headers_in->content_type->value.len = urlencoded_content_type_value.len;
+        headers_in->content_type->value.data = ngx_palloc(request->pool, urlencoded_content_type_value.len);
+        if (headers_in->content_type->value.data == NULL) {
             return NGX_ERROR;
         }
 
-        ngx_memcpy(request->headers_in.content_type->value.data, urlencoded_content_type_value.data, urlencoded_content_type_value.len);
+        ngx_memcpy(headers_in->content_type->value.data, urlencoded_content_type_value.data,
+            urlencoded_content_type_value.len);
     }
 
-    {
-        // Add header with module version
-        header = ngx_list_push(&request->headers_in.headers);
+    { // Add header with module version
+        header = ngx_list_push(&headers_in->headers);
         if (header == NULL) {
             return NGX_ERROR;
         }
@@ -76,17 +78,17 @@ ngx_http_vkupload_request_pass(ngx_http_vkupload_request_t *vkupload)
         return NGX_ERROR;
     }
 
-    {
+    { // update Content-Length
         rb = request->request_body;
 
-        request->headers_in.content_length_n = 0;
+        headers_in->content_length_n = 0;
         for(cl = rb->bufs ; cl ; cl = cl->next) {
-            request->headers_in.content_length_n += (cl->buf->last - cl->buf->pos);
+            headers_in->content_length_n += (cl->buf->last - cl->buf->pos);
         }
 
-        request->headers_in.content_length->value.len =
-            ngx_sprintf(request->headers_in.content_length->value.data, "%O", request->headers_in.content_length_n)
-                - request->headers_in.content_length->value.data;
+        headers_in->content_length->value.len =
+            ngx_sprintf(headers_in->content_length->value.data, "%O", headers_in->content_length_n)
+                - headers_in->content_length->value.data;
     }
 
     if (upload_url.len > 0 && upload_url.data[0] == '@') {
