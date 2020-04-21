@@ -19,8 +19,14 @@ ngx_shared_file_plugin_register(ngx_shared_file_plugin_t *plugin, ngx_conf_t *cf
 
     rc = plugin->configuration(cf);
     if (rc != NGX_OK) {
+        ngx_log_debug2(NGX_LOG_DEBUG_HTTP, cf->log, 0,
+            "%s: init plugin error - %d", &plugin->name, rc);
+
         return rc;
     }
+
+    ngx_log_debug1(NGX_LOG_DEBUG_HTTP, cf->log, 0,
+        "%s: init plugin success", &plugin->name);
 
     plugins[plugins_count] = plugin;
     ++plugins_count;
