@@ -248,6 +248,10 @@ ngx_shared_file_writer_close(ngx_shared_file_writer_t *writer)
                     "%s: error call plugins plugins %V (%d)", __FUNCTION__, &node->id.str, rc);
             }
 
+            ngx_log_debug4(NGX_LOG_DEBUG_HTTP, writer->stream.log, 0,
+                "%s: %V - plugin success process %z > %z", __FUNCTION__, &node->id.str,
+                node->processed_size, node->processed_size + ngx_buf_size((&buffer)));
+
             ngx_shared_file_node_lock(node);
 
             node->processed_size += ngx_buf_size((&buffer));
@@ -262,8 +266,9 @@ ngx_shared_file_writer_close(ngx_shared_file_writer_t *writer)
 static ngx_int_t
 ngx_shared_file_buffer_preload(ngx_shared_file_writer_t *writer, ngx_buf_t *buffer)
 {
-    size_t   size, buffer_size = 16 * 4096;
-    ssize_t  n;
+    ngx_shared_file_node_t     *node = writer->file->node;
+    size_t                      size, buffer_size = 16 * 4096;
+    ssize_t                     n;
 
     if (writer->buffer == NULL) {
         writer->buffer = ngx_create_temp_buf(writer->file->pool, buffer_size);
@@ -286,8 +291,14 @@ ngx_shared_file_buffer_preload(ngx_shared_file_writer_t *writer, ngx_buf_t *buff
 
     n = ngx_read_file(buffer->file, buffer->pos, size, buffer->file_pos);
     if (n == NGX_ERROR || n == 0) {
+        ngx_log_error(NGX_LOG_WARN, writer->stream.log, ngx_errno,
+            "%s: %V - error preload file for plugins (%z)", __FUNCTION__, &node->id.str, n);
         return NGX_ERROR;
     }
+
+    ngx_log_debug5(NGX_LOG_DEBUG_HTTP, writer->stream.log, 0,
+        "%s: %V - preload data for plugin %z > %z (%z)", __FUNCTION__, &node->id.str,
+        buffer->file_pos, buffer->file_pos + n, n);
 
     buffer->last += n;
     buffer->memory = 1;
