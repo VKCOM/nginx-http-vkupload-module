@@ -70,7 +70,7 @@ ngx_shared_file_manager_handler(void *data)
         node = ngx_queue_data(rbnode, ngx_shared_file_node_t, id.node);
 
         if ((current_time - node->updated_at) > NGX_SHARED_FILE_NODES_REMOVE_AFTER) {
-            ngx_shared_file_node_incref(manager, node);
+            ngx_shared_file_node_incref_locked(manager, node);
 
             node_for_remove[nodes_for_remove_count] = node;
             nodes_for_remove_count++;
@@ -90,7 +90,9 @@ ngx_shared_file_manager_handler(void *data)
         ngx_log_debug2(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
             "%s: %V - timeouted", __FUNCTION__, &node->id.str);
 
-        ngx_shared_file_node_decref(manager, node);
+        ngx_shmtx_lock(&manager->pool->mutex);
+        ngx_shared_file_node_decref_locked(manager, node);
+        ngx_shmtx_unlock(&manager->pool->mutex);
     }
 
     return 20000;
