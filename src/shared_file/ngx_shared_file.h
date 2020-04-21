@@ -75,7 +75,4 @@ ngx_shared_file_set_total(ngx_shared_file_t *file, size_t total_size, size_t par
 ngx_int_t
 ngx_shared_file_complete_if_uploaded(ngx_shared_file_t *file);
 
-ngx_int_t
-ngx_shared_file_is_full(ngx_shared_file_t *file);
-
 #endif /* _NGX_SHARED_FILE_H_INCLUDED_ */
