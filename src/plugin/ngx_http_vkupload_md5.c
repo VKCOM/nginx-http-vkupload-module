@@ -114,7 +114,7 @@ ngx_http_vkupload_md5_finalize(ngx_shared_file_manager_t *manager, ngx_shared_fi
     }
 
     ngx_slab_free_locked(manager->pool, ctx);
-    ngx_shared_file_node_plugin_set_ctx(file->manager, file->node, &ngx_http_vkupload_md5, NULL);
+    ngx_shared_file_node_plugin_set_ctx(manager, node, &ngx_http_vkupload_md5, NULL);
 }
 
 static ngx_int_t
