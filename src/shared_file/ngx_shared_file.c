@@ -109,7 +109,7 @@ ngx_shared_file_cleanup_handler(void *data)
     file->node = NULL;
 
     ngx_shmtx_lock(&manager->pool->mutex);
-    ngx_shared_file_node_decref(manager, node);
+    ngx_shared_file_node_decref_locked(manager, node);
     ngx_shmtx_unlock(&manager->pool->mutex);
 }
 
@@ -126,13 +126,13 @@ ngx_shared_file_node_unlock(ngx_shared_file_node_t *node)
 }
 
 void
-ngx_shared_file_node_incref(ngx_shared_file_manager_t *manager, ngx_shared_file_node_t *node)
+ngx_shared_file_node_incref_locked(ngx_shared_file_manager_t *manager, ngx_shared_file_node_t *node)
 {
     ++node->uses;
 }
 
 void
-ngx_shared_file_node_decref(ngx_shared_file_manager_t *manager, ngx_shared_file_node_t *node)
+ngx_shared_file_node_decref_locked(ngx_shared_file_manager_t *manager, ngx_shared_file_node_t *node)
 {
     ngx_shared_file_part_t  *part_i;
     ngx_queue_t             *part_q;
@@ -248,7 +248,7 @@ ngx_shared_file_open(ngx_shared_file_t *file, ngx_str_t *session_id)
         cln->handler = ngx_shared_file_cleanup_handler;
         cln->data = file;
 
-        ngx_shared_file_node_incref(manager, node); // for current request
+        ngx_shared_file_node_incref_locked(manager, node); // for current request
     }
 
     ngx_shmtx_unlock(&manager->pool->mutex);
@@ -286,7 +286,7 @@ ngx_shared_file_find(ngx_shared_file_t *file, ngx_str_t *session_id)
 
     node = ngx_shared_file_manager_find_node_locked(manager, session_id);
     if (node) {
-        ngx_shared_file_node_incref(manager, node); // for current request
+        ngx_shared_file_node_incref_locked(manager, node); // for current request
 
         file->node = node;
         file->cleanup = cln;

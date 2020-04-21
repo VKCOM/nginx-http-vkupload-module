@@ -52,10 +52,10 @@ void
 ngx_shared_file_node_unlock(ngx_shared_file_node_t *node);
 
 void
-ngx_shared_file_node_incref(ngx_shared_file_manager_t *manager, ngx_shared_file_node_t *node); // required shm lock
+ngx_shared_file_node_incref_locked(ngx_shared_file_manager_t *manager, ngx_shared_file_node_t *node); // required shm lock
 
 void
-ngx_shared_file_node_decref(ngx_shared_file_manager_t *manager, ngx_shared_file_node_t *node); // required shm lock
+ngx_shared_file_node_decref_locked(ngx_shared_file_manager_t *manager, ngx_shared_file_node_t *node); // required shm lock
 
 ngx_int_t
 ngx_shared_file_open(ngx_shared_file_t *file, ngx_str_t *session_id);
